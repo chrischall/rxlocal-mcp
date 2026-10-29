@@ -140,7 +140,7 @@ describe('rxlocal_request_refill', () => {
 
   it.each([
     [{ rx_ids: ['RX-9'], conveyance: 'pickup', pickup_time: 'asap' }, /not on your refill list/],
-    [{ rx_ids: ['RX-3'], conveyance: 'pickup', pickup_time: 'asap' }, /Too soon to refill/],
+    [{ rx_ids: ['RX-3'], conveyance: 'pickup', pickup_time: 'asap' }, /cannot be refilled.*unAvailableMessage/s],
     [{ rx_ids: ['RX-1'], conveyance: 'mail' }, /does not offer mail.*pickup, delivery/],
     [{ rx_ids: ['RX-1'], conveyance: 'delivery', pickup_time: 'asap' }, /pickup only/],
     [{ rx_ids: ['RX-1'], conveyance: 'pickup' }, /Choose a pickup time.*asap, later/],
@@ -156,6 +156,13 @@ describe('rxlocal_request_refill', () => {
     expect(res.isError).toBe(true);
     expect(errText(res)).toMatch(msg);
     expect(r.requestRefills).not.toHaveBeenCalled();
+  });
+
+  it('never puts the pharmacy-written unAvailableMessage into the refusal text', async () => {
+    const r = await rig();
+    const res = await r.call('rxlocal_request_refill', { rx_ids: ['RX-3'], conveyance: 'pickup', pickup_time: 'asap' });
+    expect(res.isError).toBe(true);
+    expect(errText(res)).not.toContain('Too soon to refill');
   });
 
   it('refuses a prescription that cannot be refilled even with no pharmacy message', async () => {

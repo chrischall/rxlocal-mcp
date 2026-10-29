@@ -20,10 +20,13 @@ describe('rxlocal_list_prescriptions', () => {
   it('compact projects each prescription and keeps NDC, imprint and person ids out', async () => {
     const getRefills = vi.fn(async () => structuredClone(REFILLS));
     const h = await harness(stubClient({ getRefills }));
-    const out = parseToolResult<{ count: number; prescriptions: Json[] }>(
+    const out = parseToolResult<{ untrusted_content: boolean; note: string; count: number; prescriptions: Json[] }>(
       await h.callTool('rxlocal_list_prescriptions', {}),
     );
     expect(getRefills).toHaveBeenCalledWith('P-1', 'U-1');
+    // unAvailableMessage is written by the pharmacy: the result is an untrusted envelope
+    expect(out.untrusted_content).toBe(true);
+    expect(out.note).toMatch(/pharmacy/i);
     expect(out.count).toBe(3);
     expect(out.prescriptions[0]).toMatchObject({
       rxID: 'RX-1', rxNumber: 1000001, name: 'Drug A 10mg Tablet', refillsRemaining: 3,
@@ -39,9 +42,10 @@ describe('rxlocal_list_prescriptions', () => {
 
   it('full returns every field; raw returns the whole response', async () => {
     const h = await harness();
-    const full = parseToolResult<{ prescriptions: Json[] }>(
+    const full = parseToolResult<{ untrusted_content: boolean; prescriptions: Json[] }>(
       await h.callTool('rxlocal_list_prescriptions', { view: 'full' }),
     );
+    expect(full.untrusted_content).toBe(true);
     expect(full.prescriptions[0]).toMatchObject({ ndc: '00000-0000-01', personID: 'PERSON-1' });
     const raw = parseToolResult<Json>(await h.callTool('rxlocal_list_prescriptions', { view: 'raw' }));
     expect(raw).toHaveProperty('serviceResult', 0);
