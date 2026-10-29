@@ -1,39 +1,44 @@
-// The browser bridge, used for EVERY RxLocal call.
+// The browser bridge: reads the signed-in tab's session, nothing more.
 //
-// The bearer alone is not enough: the patient-data endpoints (prescriptions,
-// messages) also need the portal's own session cookies — the SPA's axios sends
-// `withCredentials: true` — and the one that matters is HttpOnly, so it cannot
-// be read and replayed from Node. Verified live 2026-10-29: the same fresh
-// bearer + `portalid` from the tab answers 200 with the browser's cookies and
-// 401 without them (`credentials: 'omit'`), while `account/getuserinfo` passes
-// either way. So requests are relayed through the signed-in tab, which attaches
-// its own cookies; this server never holds them.
+// Patient data (prescriptions, messages) needs three things together: the
+// short-lived Keycloak bearer (`localStorage.kc_authRes`), the SPA's public
+// `portalid` header (client.ts), and the tab's `session-id` cookie. Without the
+// cookie those endpoints answer 401 while `account/getuserinfo` passes. Verified
+// live 2026-10-29 from Node: same bearer + header, no cookie → 401, with the
+// tab's `session-id` → 200.
 //
-// `fetch` is a `typeof fetch` so it plugs into createApiClient's `fetchImpl`,
-// keeping its retry, redirect and write-outcome semantics unchanged.
+// The cookie is READ from the tab, never minted. `PUT auth/session` (the SPA's
+// createSession) hands out a fresh `session-id`, but the portal keeps one
+// session per user: minting one from Node signed the browser tab out (seen live
+// 2026-10-29). Never call it from this server.
 
-import type { FetchproxyFetchInit } from '@chrischall/mcp-utils/fetchproxy';
+import { parseCookieHeader } from '@chrischall/mcp-utils';
 
-const HOST = 'patient.rxlocal.com';
 const DOMAIN = 'rxlocal.com';
 const SUBDOMAIN = 'patient';
-const AUTH_KEY = 'kc_authRes';
+export const AUTH_KEY = 'kc_authRes';
+export const SESSION_COOKIE = 'session-id';
 
 /** The slice of the mcp-utils fetchproxy transport this module uses. */
 export interface TabTransport {
   start(): Promise<void>;
   close(): Promise<void>;
-  fetch(init: FetchproxyFetchInit): Promise<{ status: number; body: string; url: string }>;
   server: {
     readLocalStorage(opts: { domain?: string; subdomain?: string; keys: string[] }): Promise<Record<string, string>>;
+    readCookies(opts: { domain?: string; subdomain?: string; keys?: string[] }): Promise<string>;
   };
 }
 
+/** What the signed-in tab holds; either may be absent (signed out, mid-login). */
+export interface TabSession {
+  /** Raw `localStorage.kc_authRes` (JSON string). */
+  authRes?: string;
+  /** The `session-id` cookie value. */
+  sessionId?: string;
+}
+
 export interface RxBridge {
-  /** The raw `localStorage.kc_authRes` of the signed-in tab, or undefined when absent. */
-  readAuthRes(): Promise<string | undefined>;
-  /** A fetch that runs inside the signed-in tab (same-origin, so it carries the tab's cookies). */
-  fetch: typeof fetch;
+  readSession(): Promise<TabSession>;
   close(): Promise<void>;
 }
 
@@ -52,17 +57,13 @@ async function defaultTransport(serverName: string, version: string): Promise<Ta
     serverName,
     version,
     defaultSubdomain: SUBDOMAIN,
-    ...fp.createBootstrapOpts({ domains: [DOMAIN], bootstrap: { localStorageKeys: [AUTH_KEY] } }),
+    ...fp.createBootstrapOpts({
+      domains: [DOMAIN],
+      bootstrap: { localStorageKeys: [AUTH_KEY], cookieKeys: [SESSION_COOKIE] },
+    }),
   });
 }
 /* v8 ignore stop */
-
-function headerRecord(h: HeadersInit | undefined): Record<string, string> {
-  if (!h) return {};
-  if (h instanceof Headers) return Object.fromEntries(h.entries());
-  if (Array.isArray(h)) return Object.fromEntries(h);
-  return { ...h };
-}
 
 export function createRxBridge(opts: RxBridgeOptions): RxBridge {
   const serverName = opts.serverName ?? 'rxlocal-mcp';
@@ -83,39 +84,19 @@ export function createRxBridge(opts: RxBridgeOptions): RxBridge {
         throw e;
       }));
 
-  const bridgeFetch = async (input: string | URL | Request, init: RequestInit = {}): Promise<Response> => {
-    const url = new URL(input instanceof Request ? input.url : String(input));
-    if (url.host !== HOST) throw new Error(`RxLocal bridge only relays requests to ${HOST}, not ${url.host}.`);
-    if (init.body !== undefined && init.body !== null && typeof init.body !== 'string') {
-      throw new Error('RxLocal bridge relays text bodies only.');
-    }
-    init.signal?.throwIfAborted();
-    const method = (init.method ?? 'GET').toUpperCase() as FetchproxyFetchInit['method'];
-    const t = await ready();
-    init.signal?.throwIfAborted();
-    const req: FetchproxyFetchInit = {
-      method,
-      path: url.pathname + url.search,
-      headers: headerRecord(init.headers),
-      ...(typeof init.body === 'string' ? { body: init.body } : {}),
-      // A POST may be a write: never re-send it after a bridge timeout.
-      ...(method === 'GET' ? {} : { retryOnTimeout: false }),
-    };
-    const res = await t.fetch(req);
-    const bodiless = res.status === 204 || res.status === 205 || res.status === 304;
-    return new Response(bodiless ? null : res.body, {
-      status: res.status,
-      headers: { 'content-type': 'application/json' },
-    });
-  };
-
   return {
-    async readAuthRes() {
+    async readSession() {
       const t = await ready();
-      const ls = await t.server.readLocalStorage({ domain: DOMAIN, subdomain: SUBDOMAIN, keys: [AUTH_KEY] });
-      return ls[AUTH_KEY];
+      const [ls, cookieHeader] = await Promise.all([
+        t.server.readLocalStorage({ domain: DOMAIN, subdomain: SUBDOMAIN, keys: [AUTH_KEY] }),
+        t.server.readCookies({ domain: DOMAIN, subdomain: SUBDOMAIN, keys: [SESSION_COOKIE] }),
+      ]);
+      const sessionId = parseCookieHeader(cookieHeader ?? '')[SESSION_COOKIE];
+      return {
+        ...(ls[AUTH_KEY] ? { authRes: ls[AUTH_KEY] } : {}),
+        ...(sessionId ? { sessionId } : {}),
+      };
     },
-    fetch: bridgeFetch as typeof fetch,
     async close() {
       const t = await started?.catch(() => undefined);
       await t?.close();

@@ -4,20 +4,23 @@
 // backend is a Keycloak-protected Bearer API. There is NO env-var credential
 // format and no server-side password login, so the only auth path is the
 // browser bridge: read the access token the signed-in SPA holds in
-// `localStorage.kc_authRes`. Requests then run through the same tab (see
-// bridge.ts): patient data needs the bearer, the SPA's public `portalid`
-// header AND the tab's own HttpOnly session cookies.
+// `localStorage.kc_authRes` and the tab's `session-id` cookie, then call the
+// API from Node. Patient data needs the bearer, the SPA's public `portalid`
+// header AND that cookie (see bridge.ts).
 //
 // The token is short-lived (~5 min) and the running SPA refreshes it, so each
 // renewal re-runs this read rather than doing an OAuth refresh grant (which
 // would rotate RedSail's refresh token and risk signing the user out).
 
 import { parseBoolEnv } from '@chrischall/mcp-utils';
+import type { TabSession } from './bridge.js';
 import { classifyBridgeError, type FetchproxyBridgeDownError } from '@chrischall/mcp-utils/fetchproxy';
 
 /** Result of resolving auth. `source` is for diagnostics only. */
 export interface ResolvedAuth {
   token: string;
+  /** The tab's `session-id` cookie, sent as `Cookie` on every call. */
+  sessionId: string;
   /** Best-effort expiry decoded from the access token's `exp` claim. */
   expiresAt?: Date;
   source: 'fetchproxy';
@@ -60,15 +63,15 @@ export function decodeJwtExpMs(jwt: string): number | undefined {
 }
 
 /**
- * Read the RxLocal access token from the signed-in browser tab. Throws
+ * Read the RxLocal access token and session cookie from the signed-in browser tab. Throws
  * {@link NO_AUTH_CONFIGURED} when disabled, {@link BRIDGE_DOWN_PREFIX} when the
  * extension is unreachable, and a pointed error when the tab holds no token.
  */
-export async function resolveAuth(readAuthRes: () => Promise<string | undefined>): Promise<ResolvedAuth> {
+export async function resolveAuth(readSession: () => Promise<TabSession>): Promise<ResolvedAuth> {
   if (fetchproxyDisabled()) throw new Error(NO_AUTH_CONFIGURED);
-  let raw: string | undefined;
+  let session: TabSession;
   try {
-    raw = await readAuthRes();
+    session = await readSession();
   } catch (e) {
     if (classifyBridgeError(e) === 'bridge_down') {
       const down = e as FetchproxyBridgeDownError;
@@ -76,6 +79,7 @@ export async function resolveAuth(readAuthRes: () => Promise<string | undefined>
     }
     throw new Error(`RxLocal auth: reading the signed-in tab failed: ${e instanceof Error ? e.message : String(e)}`);
   }
+  const raw = session.authRes;
   if (!raw) {
     throw new Error(
       'localStorage["kc_authRes"] missing on patient.rxlocal.com. ' +
@@ -91,6 +95,12 @@ export async function resolveAuth(readAuthRes: () => Promise<string | undefined>
   if (!token) {
     throw new Error('kc_authRes has no accessToken — reload the signed-in RxLocal tab and retry.');
   }
+  if (!session.sessionId) {
+    throw new Error(
+      'The session-id cookie is missing on patient.rxlocal.com (prescriptions and messages need it). ' +
+        'Reload your signed-in RxLocal tab, then retry.',
+    );
+  }
   const expMs = decodeJwtExpMs(token);
-  return { token, source: 'fetchproxy', ...(expMs ? { expiresAt: new Date(expMs) } : {}) };
+  return { token, sessionId: session.sessionId, source: 'fetchproxy', ...(expMs ? { expiresAt: new Date(expMs) } : {}) };
 }

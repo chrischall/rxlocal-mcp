@@ -24,7 +24,8 @@ examples:
 # Hosting note (a comment, not user-facing summary text): this is a
 # BROWSER-BRIDGE MCP. It has no env-var credential — it reads the signed-in
 # patient.rxlocal.com tab via the fetchproxy bridge to get the short-lived
-# Keycloak bearer, and relays EVERY API call through that tab. A bridged
+# Keycloak bearer and the tab's `session-id` cookie, then calls the API from
+# the runner. A bridged
 # registration also needs runtime `fly-shared`, `bridge: true` and
 # `bridgePortEnv: FETCHPROXY_WS_PORT`, which are registration fields this
 # manifest has no schema for (set them over the control API). `state.dataDir`
@@ -32,9 +33,9 @@ examples:
 #
 # Scope note: every API call carries the SPA's public `portalid` header (the web
 # patientPortalID); without it the patient-data endpoints (prescriptions,
-# messages) answer 401. They also need the tab's HttpOnly session cookies,
-# which is why calls go through the tab rather than from the runner (verified
-# live, read-only, 2026-10-29). The two writes (refill request, pharmacy message) are
+# messages) answer 401. They also need the tab's `session-id` cookie, which is
+# read, never minted (opening a new portal session signs the browser out)
+# (verified live, read-only, 2026-10-29). The two writes (refill request, pharmacy message) are
 # derived from the SPA bundle and are UNVERIFIED on the wire; both are
 # confirm-gated.
 env:

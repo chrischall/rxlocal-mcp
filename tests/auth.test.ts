@@ -19,10 +19,11 @@ afterEach(() => {
 describe('resolveAuth', () => {
   it('reads accessToken from kc_authRes and decodes exp', async () => {
     const exp = Math.floor(Date.now() / 1000) + 300;
-    readMock.mockResolvedValue(JSON.stringify({ accessToken: jwt(exp) }));
+    readMock.mockResolvedValue({ authRes: JSON.stringify({ accessToken: jwt(exp) }), sessionId: 'S-1' });
     const r = await resolveAuth(readMock);
     expect(r.source).toBe('fetchproxy');
     expect(r.expiresAt?.getTime()).toBe(exp * 1000);
+    expect(r.sessionId).toBe('S-1');
   });
 
   it('throws NO_AUTH_CONFIGURED when disabled', async () => {
@@ -38,12 +39,17 @@ describe('resolveAuth', () => {
   });
 
   it('throws a pointed error when kc_authRes is missing', async () => {
-    readMock.mockResolvedValue(undefined);
+    readMock.mockResolvedValue({ sessionId: 'S-1' });
     await expect(resolveAuth(readMock)).rejects.toThrow(/kc_authRes.*missing/i);
   });
 
+  it('throws a pointed error when the session-id cookie is missing', async () => {
+    readMock.mockResolvedValue({ authRes: JSON.stringify({ accessToken: jwt(Math.floor(Date.now() / 1000) + 300) }) });
+    await expect(resolveAuth(readMock)).rejects.toThrow(/session-id.*missing/i);
+  });
+
   it('throws when kc_authRes has no accessToken', async () => {
-    readMock.mockResolvedValue(JSON.stringify({ refreshToken: 'r' }));
+    readMock.mockResolvedValue({ authRes: JSON.stringify({ refreshToken: 'r' }), sessionId: 'S-1' });
     await expect(resolveAuth(readMock)).rejects.toThrow(/no accessToken/i);
   });
 });

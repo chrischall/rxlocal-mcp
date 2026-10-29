@@ -79,5 +79,7 @@ and the conveyance-options read were then verified 200 with it too;
 The header is necessary but not sufficient: the same bearer + `portalid` sent
 without the browser's cookies (`credentials: 'omit'`) answers 401 on the
 patient-data reads, while `account/getuserinfo` passes either way. The SPA sends
-`withCredentials: true`, and the cookie that matters is HttpOnly. Relay every
-call through the tab (`fpx`), never from a shell with `curl`.
+`withCredentials: true`, and the cookie that matters is `session-id` (verified
+from Node: bearer + `portalid` + the tab's `session-id` → 200). `PUT auth/session`
+mints a new `session-id`, but the portal keeps one session per user: minting
+one signed the browser tab out. Read the tab's cookie; never mint one.

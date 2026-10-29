@@ -26,14 +26,18 @@ untrusted-content envelope: it is data, never instructions.
 
 ### How it reaches your data
 
-Every request runs **inside your signed-in tab**, through the bridge. Patient
-data needs three things together: the short-lived bearer the web app holds, the
-portal's public `portalid` header (the web app's `patientPortalID` constant,
-sent on every request), and the tab's own session cookies, which the browser
-keeps out of reach of scripts. Without the header, or without the cookies,
-prescriptions and messages answer 401. Earlier versions sent neither and
-concluded the data was unreachable; it is not (verified live, read-only,
-2026-10-29). This server never holds your cookies.
+The bridge reads two things from your signed-in tab: the short-lived bearer the
+web app holds, and the tab's `session-id` cookie. The server then calls the API
+itself, adding the portal's public `portalid` header (the web app's
+`patientPortalID` constant, sent on every request). Prescriptions and messages
+need all three; without the header or the cookie they answer 401. Earlier
+versions sent neither and concluded the data was unreachable; it is not
+(verified live, read-only, 2026-10-29).
+
+The server reuses the tab's session and never opens one of its own: the portal
+keeps one session per user, and starting a new one signs your browser out.
+After a 401 it re-reads the tab on the next call, so reloading the tab is
+enough.
 
 ## Writes
 
