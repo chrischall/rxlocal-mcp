@@ -22,10 +22,11 @@ the same headers through that tab with `fpx`. Read-only.
   session" because they answered 401. They are not. The 401 came from the
   missing `portalid` header: with the same fresh bearer, leaving it out gives
   401 and sending it gives 200 (verified live, read-only, 2026-10-29).
-- Patient data ALSO needs the tab's own session cookies (HttpOnly, so no
-  script can read them). That is why every call goes through the tab with
-  `fpx get`/`post-json`: the same bearer and header sent with plain `curl`
-  still answer 401. Do not "optimise" a call into `curl`.
+- Patient data ALSO needs the tab's `session-id` cookie. Calls through the tab
+  (`fpx get`/`post-json`) carry it automatically, which is why the helper
+  uses them. The same bearer and header from plain `curl` answer 401 unless
+  that cookie is sent too. Never call `PUT auth/session` to get a fresh one:
+  the portal keeps one session per user, and a new one signs the browser out.
 - `messages` never marks anything read. Read-marking is a separate endpoint the
   helper does not call.
 

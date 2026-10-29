@@ -2,7 +2,7 @@ import { createApiClient, type ApiClient, loadDotenvSafely } from '@chrischall/m
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { resolveAuth, type ResolvedAuth } from './auth.js';
-import { createRxBridge, type RxBridge } from './bridge.js';
+import { SESSION_COOKIE, createRxBridge, type RxBridge } from './bridge.js';
 import { SERVER_NAME, VERSION } from './version.js';
 
 try {
@@ -17,9 +17,8 @@ export const BASE_URL = 'https://patient.rxlocal.com/api';
  * The web portal's public `patientPortalID`. The SPA's axios instance sends it
  * as a `portalid` header on EVERY API call, and the patient-data endpoints
  * (prescriptions, messages) answer 401 without it — verified live 2026-10-29
- * (same bearer: no header → 401, header → 200). They ALSO need the tab's own
- * session cookies, which is why every call runs through the bridge (see
- * bridge.ts) rather than from Node. It is a constant baked into the
+ * (same bearer: no header → 401, header → 200). They ALSO need the tab's
+ * `session-id` cookie (see bridge.ts). It is a constant baked into the
  * SPA bundle, not a secret. (The native app uses a different id; do not.)
  */
 export const PORTAL_ID = '370549AF-06A2-4E64-B17D-4040EF57D233';
@@ -127,8 +126,8 @@ export interface CredentialStatus {
 
 /**
  * RxLocal API client. The bearer is read from the signed-in browser tab
- * (see {@link resolveAuth}), every request is relayed through that tab (see
- * bridge.ts), and the bearer is cached until just before its `exp`; a single
+ * with its `session-id` cookie (see {@link resolveAuth}); requests go from Node,
+ * and the pair is cached until just before its `exp`; a single
  * in-flight resolve is shared across concurrent callers.
  */
 export class RxLocalClient {
@@ -142,46 +141,49 @@ export class RxLocalClient {
    */
   private readonly writeApi: ApiClient;
   private readonly authResolver: () => Promise<ResolvedAuth>;
-  private cached: { token: string; expMs: number; source: ResolvedAuth['source'] } | undefined;
+  private cached: { token: string; sessionId: string; expMs: number; source: ResolvedAuth['source'] } | undefined;
   private inflight: Promise<string> | undefined;
 
-  private readonly bridge: RxBridge | undefined;
-
-  /**
-   * Defaults: one bridge, used both to read the bearer and to send every
-   * request through the signed-in tab. Tests inject `resolveAuth` + `fetchImpl`.
-   */
-  constructor(opts?: { resolveAuth?: () => Promise<ResolvedAuth>; fetchImpl?: typeof fetch; bridge?: RxBridge }) {
-    const needsBridge = !opts?.resolveAuth || !opts?.fetchImpl;
-    this.bridge = opts?.bridge ?? (needsBridge ? createRxBridge({ serverName: SERVER_NAME, version: VERSION }) : undefined);
-    const bridge = this.bridge;
-    this.authResolver = opts?.resolveAuth ?? (() => resolveAuth(() => bridge!.readAuthRes()));
+  constructor(opts?: { resolveAuth?: () => Promise<ResolvedAuth>; bridge?: RxBridge }) {
+    /* v8 ignore next 4 -- the real bridge is exercised live */
+    this.authResolver =
+      opts?.resolveAuth ??
+      ((bridge: RxBridge) => () => resolveAuth(() => bridge.readSession()))(
+        opts?.bridge ?? createRxBridge({ serverName: SERVER_NAME, version: VERSION }));
     const common = {
-      fetchImpl: opts?.fetchImpl ?? bridge!.fetch,
       baseUrl: BASE_URL,
       serviceName: SERVER_NAME,
       timeout: 30_000,
-      baseHeaders: { portalid: PORTAL_ID },
+      // getToken runs first, so the session read with this token is cached by now.
+      baseHeaders: (): Record<string, string> => ({
+        portalid: PORTAL_ID,
+        ...(this.cached ? { cookie: `${SESSION_COOKIE}=${this.cached.sessionId}` } : {}),
+      }),
       getToken: () => this.getToken(),
     };
     this.api = createApiClient({
       ...common,
       retry: { count: 1, delayMs: 1500 },
-      onUnauthorized: () =>
-        new Error(
+      onUnauthorized: () => {
+        // Drop the session so the retry re-reads a reloaded tab.
+        this.cached = undefined;
+        return new Error(
           'RxLocal returned 401 — the signed-in session is stale. Reload your patient.rxlocal.com tab and retry.',
-        ),
+        );
+      },
     });
     this.writeApi = createApiClient({
       ...common,
       retry: { count: 0, delayMs: 0 },
       writeOutcomeHint:
         'RxLocal may already have received this. Check rxlocal_list_prescriptions / rxlocal_list_messages before retrying; do not resend blindly.',
-      onUnauthorized: () =>
-        new Error(
+      onUnauthorized: () => {
+        this.cached = undefined;
+        return new Error(
           'RxLocal returned 401 — the signed-in session is stale, and nothing was sent. Reload your ' +
             'patient.rxlocal.com tab, then preview the write again.',
-        ),
+        );
+      },
     });
   }
 
@@ -192,9 +194,9 @@ export class RxLocalClient {
     if (this.inflight) return this.inflight;
     this.inflight = (async () => {
       try {
-        const { token, expiresAt, source } = await this.authResolver();
+        const { token, sessionId, expiresAt, source } = await this.authResolver();
         const expMs = expiresAt ? expiresAt.getTime() : Date.now() + TOKEN_FALLBACK_TTL_MS;
-        this.cached = { token, expMs, source };
+        this.cached = { token, sessionId, expMs, source };
         return token;
       } finally {
         this.inflight = undefined;

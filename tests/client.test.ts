@@ -3,9 +3,6 @@ import { WriteOutcomeUnknownError } from '@chrischall/mcp-utils';
 import { RxLocalClient, PORTAL_ID } from '../src/client.js';
 import { decodeJwtExpMs } from '../src/auth.js';
 
-/** Defer to the (stubbed) global fetch at call time. */
-const viaGlobalFetch: typeof fetch = (input, init) => fetch(input, init);
-
 function jwt(expSeconds: number): string {
   const payload = Buffer.from(JSON.stringify({ exp: expSeconds })).toString('base64url');
   return `h.${payload}.s`;
@@ -41,10 +38,10 @@ describe('RxLocalClient token cache', () => {
   it('coalesces concurrent token resolves into one call', async () => {
     const resolve = vi.fn(async () => ({
       token: jwt(Math.floor(Date.now() / 1000) + 300),
-      source: 'fetchproxy' as const,
+      sessionId: 'S-1', source: 'fetchproxy' as const,
       expiresAt: new Date(Date.now() + 300_000),
     }));
-    const client = new RxLocalClient({ fetchImpl: viaGlobalFetch, resolveAuth: resolve });
+    const client = new RxLocalClient({ resolveAuth: resolve });
     await Promise.all([client.getUserInfo(), client.getAge(), client.getLegal('termsofuse')]);
     expect(resolve).toHaveBeenCalledTimes(1);
   });
@@ -55,9 +52,9 @@ describe('RxLocalClient token cache', () => {
       n += 1;
       // first token already within the 60s skew → forces a re-resolve next call
       const exp = Math.floor(Date.now() / 1000) + (n === 1 ? 30 : 300);
-      return { token: jwt(exp), source: 'fetchproxy' as const, expiresAt: new Date(exp * 1000) };
+      return { token: jwt(exp), sessionId: 'S-1', source: 'fetchproxy' as const, expiresAt: new Date(exp * 1000) };
     });
-    const client = new RxLocalClient({ fetchImpl: viaGlobalFetch, resolveAuth: resolve });
+    const client = new RxLocalClient({ resolveAuth: resolve });
     await client.getAge();
     await client.getAge();
     expect(resolve).toHaveBeenCalledTimes(2);
@@ -65,10 +62,10 @@ describe('RxLocalClient token cache', () => {
 
   it('builds the /api base path (keeps /api segment)', async () => {
     const resolve = async () => ({
-      token: jwt(Math.floor(Date.now() / 1000) + 300), source: 'fetchproxy' as const,
+      token: jwt(Math.floor(Date.now() / 1000) + 300), sessionId: 'S-1', source: 'fetchproxy' as const,
       expiresAt: new Date(Date.now() + 300_000),
     });
-    const client = new RxLocalClient({ fetchImpl: viaGlobalFetch, resolveAuth: resolve });
+    const client = new RxLocalClient({ resolveAuth: resolve });
     await client.getAge();
     const url = String(fetchMock.mock.calls[0][0]);
     expect(url).toBe('https://patient.rxlocal.com/api/account/accountholderage');
@@ -76,10 +73,10 @@ describe('RxLocalClient token cache', () => {
 
   it('credentialStatus reports the source without the token value', async () => {
     const resolve = async () => ({
-      token: jwt(Math.floor(Date.now() / 1000) + 300), source: 'fetchproxy' as const,
+      token: jwt(Math.floor(Date.now() / 1000) + 300), sessionId: 'S-1', source: 'fetchproxy' as const,
       expiresAt: new Date(Date.now() + 300_000),
     });
-    const client = new RxLocalClient({ fetchImpl: viaGlobalFetch, resolveAuth: resolve });
+    const client = new RxLocalClient({ resolveAuth: resolve });
     const status = await client.credentialStatus();
     expect(status.source).toBe('fetchproxy');
     expect(JSON.stringify(status)).not.toContain('eyJ');
@@ -88,7 +85,7 @@ describe('RxLocalClient token cache', () => {
 
 describe('RxLocalClient headers and the single-attempt write path', () => {
   const tok = () => ({
-    token: jwt(Math.floor(Date.now() / 1000) + 300), source: 'fetchproxy' as const,
+    token: jwt(Math.floor(Date.now() / 1000) + 300), sessionId: 'S-1', source: 'fetchproxy' as const,
     expiresAt: new Date(Date.now() + 300_000),
   });
   const json = (body: unknown, status = 200) =>
@@ -106,7 +103,7 @@ describe('RxLocalClient headers and the single-attempt write path', () => {
     withFetch((url) => (url.includes('getuserinfo')
       ? json({ rxLocalPatientID: 'P-1', globalUserID: 'U-1', firstName: 'Jane', lastName: 'Doe', primaryDataExchangeIdentifier: 'DEI-1' })
       : json([])));
-    const client = new RxLocalClient({ fetchImpl: viaGlobalFetch, resolveAuth: async () => tok() });
+    const client = new RxLocalClient({ resolveAuth: async () => tok() });
     const ctx = await client.accountContext();
     expect(ctx).toEqual({ groupOwnerID: 'P-1', rxLocalPatientID: 'P-1', dataExchangeIdentifier: 'DEI-1', userId: 'U-1', displayName: 'Jane Doe' });
     await client.getAge();
@@ -119,13 +116,15 @@ describe('RxLocalClient headers and the single-attempt write path', () => {
     for (const call of fetchMock.mock.calls) {
       expect(headerOf(call, 'portalid')).toBe(PORTAL_ID);
       expect(headerOf(call, 'authorization')).toMatch(/^Bearer /);
+      // the tab's session cookie, without which patient data answers 401
+      expect(headerOf(call, 'cookie')).toBe('session-id=S-1');
     }
     expect(PORTAL_ID).toBe('370549AF-06A2-4E64-B17D-4040EF57D233');
   });
 
   it('builds the patient-data paths, query and rxlocaluserid header the SPA uses', async () => {
     withFetch(() => json({}));
-    const client = new RxLocalClient({ fetchImpl: viaGlobalFetch, resolveAuth: async () => tok() });
+    const client = new RxLocalClient({ resolveAuth: async () => tok() });
     await client.getRefills('P-1', 'U-1');
     await client.getConveyanceOptions('DEI-1', 'P-1', 'P-2', 'U-1');
     await client.syncMessages({ groupOwnerID: 'P-1', rxLocalPatientID: 'P-1', dataExchangeIdentifier: undefined });
@@ -149,41 +148,57 @@ describe('RxLocalClient headers and the single-attempt write path', () => {
 
   it('accountContext leaves a blank location undefined', async () => {
     withFetch(() => json({ rxLocalPatientID: 'P-1', globalUserID: 'U-1', primaryDataExchangeIdentifier: '' }));
-    const client = new RxLocalClient({ fetchImpl: viaGlobalFetch, resolveAuth: async () => tok() });
+    const client = new RxLocalClient({ resolveAuth: async () => tok() });
     expect(await client.accountContext()).toMatchObject({ dataExchangeIdentifier: undefined, displayName: '' });
   });
 
-  it('a write answered 401 is sent once: no token re-read, no replay', async () => {
+  it('a write answered 401 is sent once: no replay, and the next call re-reads the tab', async () => {
     withFetch(() => json({ title: 'Unauthorized' }, 401));
     const resolve = vi.fn(async () => tok());
-    const client = new RxLocalClient({ fetchImpl: viaGlobalFetch, resolveAuth: resolve });
+    const client = new RxLocalClient({ resolveAuth: resolve });
     await expect(client.requestRefills('P-1', 'U-1', {})).rejects.toThrow(/401.*nothing was sent/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    // the cached session is dropped, so a reloaded tab is picked up on retry
     await expect(client.createMessage({})).rejects.toThrow(/401/);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledTimes(2);
+  });
+
+  it('a read answered 401 drops the cached session too', async () => {
+    let first = true;
+    withFetch(() => {
+      if (first) { first = false; return json({}, 401); }
+      return json({ underMinimumAge: false, minimumAge: 13 });
+    });
+    const resolve = vi.fn(async () => tok());
+    const client = new RxLocalClient({ resolveAuth: resolve });
+    await expect(client.getAge()).rejects.toThrow(/401/);
+    await expect(client.getAge()).resolves.toMatchObject({ minimumAge: 13 });
+    expect(resolve).toHaveBeenCalledTimes(2);
   });
 
   it('a write answered 429 is not retried', async () => {
     withFetch(() => json({}, 429));
-    const client = new RxLocalClient({ fetchImpl: viaGlobalFetch, resolveAuth: async () => tok() });
+    const client = new RxLocalClient({ resolveAuth: async () => tok() });
     await expect(client.createMessage({})).rejects.toThrow();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('a write answered 5xx or dropped is WriteOutcomeUnknownError, never retried', async () => {
     withFetch(() => json({}, 502));
-    const client = new RxLocalClient({ fetchImpl: viaGlobalFetch, resolveAuth: async () => tok() });
+    const client = new RxLocalClient({ resolveAuth: async () => tok() });
     await expect(client.requestRefills('P-1', 'U-1', {})).rejects.toBeInstanceOf(WriteOutcomeUnknownError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     withFetch(() => { throw new TypeError('fetch failed'); });
-    const fresh = new RxLocalClient({ fetchImpl: viaGlobalFetch, resolveAuth: async () => tok() });
+    const fresh = new RxLocalClient({ resolveAuth: async () => tok() });
     await expect(fresh.createMessage({})).rejects.toBeInstanceOf(WriteOutcomeUnknownError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('the messages read is a POST but not a write: a 5xx is a plain error', async () => {
     withFetch(() => json({}, 502));
-    const client = new RxLocalClient({ fetchImpl: viaGlobalFetch, resolveAuth: async () => tok() });
+    const client = new RxLocalClient({ resolveAuth: async () => tok() });
     const err = await client.syncMessages({ groupOwnerID: 'P-1', rxLocalPatientID: 'P-1', dataExchangeIdentifier: 'D' }).catch((e) => e);
     expect(err).not.toBeInstanceOf(WriteOutcomeUnknownError);
   });
