@@ -1,0 +1,24 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "chrischall",
+  "owner": { "name": "Chris Chall", "email": "chris.c.hall@gmail.com" },
+  "metadata": {
+    "description": "RxLocal pharmacy patient-portal tools for Claude Code",
+    "version": "0.0.0"
+  },
+  "plugins": [
+    {
+      "name": "rxlocal",
+      "displayName": "RxLocal",
+      "source": "./",
+      "description": "RxLocal (PioneerRx/RedSail) pharmacy patient-portal MCP for Claude — account profile, age gate, notifications and legal documents",
+      "version": "0.0.0",
+      "author": { "name": "Chris Chall" },
+      "homepage": "https://github.com/chrischall/rxlocal-mcp",
+      "repository": "https://github.com/chrischall/rxlocal-mcp",
+      "license": "MIT",
+      "keywords": ["rxlocal", "pioneerrx", "pharmacy", "mcp"],
+      "category": "productivity"
+    }
+  ]
+}

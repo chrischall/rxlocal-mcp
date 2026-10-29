@@ -1,0 +1,62 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/dxt/main/dist/mcpb-manifest.schema.json",
+  "manifest_version": "0.3",
+  "name": "rxlocal-mcp",
+  "display_name": "RxLocal",
+  "version": "0.0.0",
+  "description": "RxLocal (PioneerRx/RedSail) pharmacy patient-portal MCP — account profile, age gate, notifications and legal documents",
+  "author": { "name": "Chris Chall", "email": "chris.c.hall@gmail.com", "url": "https://github.com/chrischall" },
+  "repository": { "type": "git", "url": "https://github.com/chrischall/rxlocal-mcp" },
+  "homepage": "https://github.com/chrischall/rxlocal-mcp",
+  "support": "https://github.com/chrischall/rxlocal-mcp/issues",
+  "license": "MIT",
+  "keywords": ["rxlocal", "pioneerrx", "pharmacy", "mcp"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/bundle.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/bundle.js"],
+      "env": {
+        "RXLOCAL_DISABLE_FETCHPROXY": "${user_config.rxlocal_disable_fetchproxy}",
+        "FETCHPROXY_WS_PORT": "${user_config.fetchproxy_ws_port}",
+        "FETCHPROXY_WS_HOST": "${user_config.fetchproxy_ws_host}",
+        "FETCHPROXY_IDENTITY_DIR": "${user_config.fetchproxy_identity_dir}"
+      }
+    }
+  },
+  "user_config": {
+    "rxlocal_disable_fetchproxy": {
+      "type": "string",
+      "title": "Disable browser bridge (advanced)",
+      "description": "Set to 1/true to refuse to read the signed-in tab via the fetchproxy bridge (CI / headless). Every tool then fails instead of reading a session. Defaults to false.",
+      "required": false
+    },
+    "fetchproxy_ws_port": {
+      "type": "string",
+      "title": "fetchproxy port (advanced)",
+      "description": "Localhost port of the fetchproxy concentrator the ContextMint Bridge extension connects to (default 37149). Every MCP on one machine shares it, so move it for all of them or not at all.",
+      "required": false
+    },
+    "fetchproxy_ws_host": {
+      "type": "string",
+      "title": "fetchproxy bind address (advanced)",
+      "description": "Bind interface for the fetchproxy concentrator, a literal IP only (default 127.0.0.1). Keep on loopback; it exists for hosted deployments that run each MCP in its own network namespace.",
+      "required": false
+    },
+    "fetchproxy_identity_dir": {
+      "type": "string",
+      "title": "fetchproxy identity directory (advanced)",
+      "description": "Absolute path where the fetchproxy long-term identity keypair is stored (default ~/.fetchproxy/identity/).",
+      "required": false
+    }
+  },
+  "tools": [
+    { "name": "rxlocal_profile", "description": "Account holder's profile: name, email, phone, account type, patient + user IDs" },
+    { "name": "rxlocal_age_gate", "description": "Account-holder age gate (under-minimum flag + minimum age)" },
+    { "name": "rxlocal_notifications", "description": "Most-relevant notification banner for the account" },
+    { "name": "rxlocal_legal", "description": "Terms of Use or Privacy Policy document" },
+    { "name": "rxlocal_healthcheck", "description": "Verify the RxLocal session and API reachability: reads the signed-in tab, makes one authenticated call, and distinguishes \"no session\" from \"session rejected\" from \"bridge down\"." }
+  ],
+  "compatibility": { "platforms": ["darwin", "win32", "linux"], "runtimes": { "node": ">=22.0.0" } }
+}

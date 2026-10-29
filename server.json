@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.chrischall/rxlocal-mcp",
+  "description": "RxLocal (PioneerRx/RedSail) pharmacy portal MCP — profile, age gate, notifications, legal docs",
+  "repository": { "url": "https://github.com/chrischall/rxlocal-mcp", "source": "github" },
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "rxlocal-mcp",
+      "version": "0.0.0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        { "name": "RXLOCAL_DISABLE_FETCHPROXY", "description": "Set to 1/true to refuse the fetchproxy bridge read (CI/headless). Tools then fail instead of reading a session. Defaults to false.", "isRequired": false, "format": "string" },
+        { "name": "FETCHPROXY_WS_PORT", "description": "Localhost port of the fetchproxy concentrator the ContextMint Bridge connects to (default 37149). Shared by every MCP on the machine.", "isRequired": false, "format": "string" },
+        { "name": "FETCHPROXY_WS_HOST", "description": "Bind interface for the fetchproxy concentrator, a literal IP only (default 127.0.0.1). Keep on loopback.", "isRequired": false, "format": "string" },
+        { "name": "FETCHPROXY_IDENTITY_DIR", "description": "Absolute path where the fetchproxy long-term identity keypair is stored (default ~/.fetchproxy/identity/).", "isRequired": false, "format": "string" }
+      ]
+    }
+  ]
+}

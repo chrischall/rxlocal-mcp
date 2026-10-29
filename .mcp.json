@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rxlocal": {
+      "command": "npx",
+      "args": ["-y", "rxlocal-mcp"]
+    }
+  }
+}

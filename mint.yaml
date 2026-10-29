@@ -1,0 +1,46 @@
+version: 1
+name: RxLocal
+slug: rxlocal
+summary: >-
+  RxLocal (PioneerRx/RedSail) pharmacy patient-portal MCP — account profile,
+  age gate, notifications and legal documents
+examples:
+  - prompt: What's on my RxLocal pharmacy account — name, email and phone on file?
+    note: Reads the account profile. Read-only.
+  - prompt: Does my RxLocal account have any pending notification banner?
+    note: Reads the portal's most-relevant notification state.
+  - prompt: Show me the RxLocal Terms of Use — does it need my acceptance?
+    note: Reads a legal document's metadata (full text on request).
+#
+# Hosting note (a comment, not user-facing summary text): this is a
+# BROWSER-BRIDGE MCP. It has no env-var credential — it reads the signed-in
+# patient.rxlocal.com tab via the fetchproxy bridge (@fetchproxy/bootstrap) to
+# get the short-lived Keycloak bearer, then calls the API directly. A bridged
+# registration also needs runtime `fly-shared`, `bridge: true` and
+# `bridgePortEnv: FETCHPROXY_WS_PORT`, which are registration fields this
+# manifest has no schema for (set them over the control API). `state.dataDir`
+# below is required for `bridge`.
+#
+# Scope note: RxLocal binds its patient-data endpoints (prescriptions,
+# messages) to the live SPA session; they 401 on any replayed request, so this
+# server exposes only the stateless account reads that work server-side.
+env:
+  - name: RXLOCAL_DISABLE_FETCHPROXY
+    required: false
+    help: >-
+      Set to 1 to disable the browser-bridge read, making a missing session a
+      hard error. There is no other credential path, so a hosted registration
+      that is not bridged will have every tool fail — leave unset for bridged.
+state:
+  dataDir: true
+  reason: >-
+    The fetchproxy identity lives at $HOME/.fetchproxy/identity/<name>.json and
+    the pair code derives from it. Without a persistent $HOME every cold start
+    mints a fresh identity and re-prompts pairing in the browser; the API
+    refuses bridge without it.
+egress:
+  allow:
+    # The only host this server process fetches: client.ts calls
+    # https://patient.rxlocal.com/api for every tool. rxlocal.com is declared
+    # to the fetchproxy BRIDGE (the browser reaches it), not this process.
+    - patient.rxlocal.com

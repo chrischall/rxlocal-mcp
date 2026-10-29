@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# rxlocal — read an RxLocal (PioneerRx/RedSail) patient portal through the user's
+# signed-in browser tab with fpx. Read-only. stdout = JSON, stderr = status.
+#
+#   rxlocal <command> [args]
+#
+# Env: RXLOCAL_BASE    API base   (default https://patient.rxlocal.com/api)
+#      RXLOCAL_PROFILE fpx profile (default rxlocal)
+set -uo pipefail
+
+BASE="${RXLOCAL_BASE:-https://patient.rxlocal.com/api}"; BASE="${BASE%/}"
+PROFILE="${RXLOCAL_PROFILE:-rxlocal}"
+
+die() { echo "rxlocal: $1" >&2; exit "${2:-1}"; }
+
+# --- auth: read the live Bearer from the tab's localStorage, resolve IDs once ---
+TOK=""; RXUID=""; RXPID=""
+load_token() {
+  local ls
+  ls="$(fpx local-storage kc_authRes -p "$PROFILE")" || exit $?
+  TOK="$(printf '%s' "$ls" | jq -r '(.kc_authRes // "{}") | fromjson | .accessToken // empty')"
+  [ -n "$TOK" ] || die "no accessToken in kc_authRes — sign in at https://patient.rxlocal.com and keep the tab open" 5
+}
+# Run an fpx verb against $BASE/$path with the Bearer + rxlocaluserid headers.
+# $1 verb (get|post-json)  $2 path  $3 body(optional, for post-json)
+# Fails loudly on the API's 401 ProblemDetails shape (token aged out).
+api() {
+  local verb="$1" path="$2" body="${3:-}" out rc hdr=(-H "Authorization: Bearer $TOK")
+  local ipflag=(); [ "${RXLOCAL_INPAGE:-}" = 1 ] && ipflag=(--in-page)
+  [ -n "$RXUID" ] && hdr+=(-H "rxlocaluserid: $RXUID")
+  if [ "$verb" = post-json ]; then
+    out="$(fpx post-json "$BASE/$path" "${body:-{\}}" -p "$PROFILE" "${ipflag[@]}" "${hdr[@]}")"; rc=$?
+  else
+    out="$(fpx get "$BASE/$path" -p "$PROFILE" "${ipflag[@]}" "${hdr[@]}")"; rc=$?
+  fi
+  [ "$rc" -eq 0 ] || exit "$rc"
+  if printf '%s' "$out" | jq -e 'type=="object" and .status==401' >/dev/null 2>&1; then
+    die "401 from $path — this endpoint is bound to the live portal session; the replay pattern cannot reach it (see endpoints.md). Account reads (profile, age) work. Reload the tab or try RXLOCAL_INPAGE=1 after declaring --allow-in-page." 4
+  fi
+  printf '%s\n' "$out"
+}
+# Resolve rxlocaluserid (globalUserID) + active patient id (rxLocalPatientID).
+resolve_ids() {
+  load_token
+  local ui; ui="$(api get account/getuserinfo)" || exit $?
+  RXUID="$(printf '%s' "$ui" | jq -r '.globalUserID // empty')"
+  RXPID="$(printf '%s' "$ui" | jq -r '.rxLocalPatientID // empty')"
+  [ -n "$RXPID" ] || die "could not resolve rxLocalPatientID from getuserinfo" 4
+  printf '%s' "$ui"
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  profile)       # account holder: name, email, phone, IDs, roles
+    load_token
+    api get account/getuserinfo | jq '{globalUserID, userName, firstName, lastName,
+      emailAddress, smsPhone, accountType, rxLocalPatientID, primaryPersonID,
+      roles, entityStatus, passwordExpired, termsAcceptanceRequired}' ;;
+  age)           # account-holder age gate
+    load_token
+    api get account/accountholderage ;;
+  patient)       # demographics for the active patient
+    resolve_ids >/dev/null
+    api get "patients/$RXPID/patient" | jq '{patientID, firstName, lastName, bornOn,
+      smsPhone, email, dataExchangeIdentifier, globalUserID}' ;;
+  refills|medications|meds)  # prescriptions / refills on file (the med list)
+    resolve_ids >/dev/null
+    api get "refill/$RXPID/v2" ;;   # TODO: project once shape is captured (see endpoints.md)
+  messages)      # recent messages with the pharmacy
+    resolve_ids >/dev/null
+    api post-json Messaging/SyncPatientMessages \
+      "{\"RxLocalPatientID\":\"$RXPID\",\"GroupOwnerID\":\"$RXPID\",\"StartDate\":null,\"EndDate\":null,\"GetXMostRecentMessagesForDateRange\":true,\"IsFirstDownloadOfMessages\":true}" \
+      | jq '.data.messagesToAddUpdate // .data // .' ;;   # TODO: project once shape is captured
+  notifications) # most-relevant notification banner
+    resolve_ids >/dev/null
+    api get "notifications/most-relevant/v1?groupOwnerID=$RXPID" ;;
+  raw)           # GET|POST <path> [json-body] — anything else, unprojected
+    m="${1:-}"; p="${2:-}"; [ -n "$p" ] || die "raw GET|POST <path> [body]"
+    resolve_ids >/dev/null
+    case "$m" in
+      GET|get)   api get "$p" ;;
+      POST|post) api post-json "$p" "${3:-{\}}" ;;
+      *) die "raw: method must be GET or POST" ;;
+    esac ;;
+  ""|-h|--help|help)
+    sed -n '2,12p' "$0" >&2; exit 0 ;;
+  *) die "unknown command: $cmd (try: profile age patient refills messages notifications raw)" ;;
+esac
