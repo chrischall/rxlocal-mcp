@@ -4,17 +4,16 @@
 // backend is a Keycloak-protected Bearer API. There is NO env-var credential
 // format and no server-side password login, so the only auth path is the
 // browser bridge: read the access token the signed-in SPA holds in
-// `localStorage.kc_authRes`, then call the API directly from Node (the account
-// endpoints accept the bearer server-side — no bot wall, no IP binding).
+// `localStorage.kc_authRes`. Requests then run through the same tab (see
+// bridge.ts): patient data needs the bearer, the SPA's public `portalid`
+// header AND the tab's own HttpOnly session cookies.
 //
 // The token is short-lived (~5 min) and the running SPA refreshes it, so each
 // renewal re-runs this read rather than doing an OAuth refresh grant (which
 // would rotate RedSail's refresh token and risk signing the user out).
 
 import { parseBoolEnv } from '@chrischall/mcp-utils';
-import { bootstrap } from '@fetchproxy/bootstrap';
 import { classifyBridgeError, type FetchproxyBridgeDownError } from '@chrischall/mcp-utils/fetchproxy';
-import { SERVER_NAME, VERSION } from './version.js';
 
 /** Result of resolving auth. `source` is for diagnostics only. */
 export interface ResolvedAuth {
@@ -65,21 +64,11 @@ export function decodeJwtExpMs(jwt: string): number | undefined {
  * {@link NO_AUTH_CONFIGURED} when disabled, {@link BRIDGE_DOWN_PREFIX} when the
  * extension is unreachable, and a pointed error when the tab holds no token.
  */
-export async function resolveAuth(): Promise<ResolvedAuth> {
+export async function resolveAuth(readAuthRes: () => Promise<string | undefined>): Promise<ResolvedAuth> {
   if (fetchproxyDisabled()) throw new Error(NO_AUTH_CONFIGURED);
-  let session;
+  let raw: string | undefined;
   try {
-    session = await bootstrap({
-      serverName: SERVER_NAME,
-      version: VERSION,
-      domains: ['rxlocal.com'],
-      declare: {
-        cookies: [],
-        localStorage: ['kc_authRes'],
-        sessionStorage: [],
-        captureHeaders: [],
-      },
-    });
+    raw = await readAuthRes();
   } catch (e) {
     if (classifyBridgeError(e) === 'bridge_down') {
       const down = e as FetchproxyBridgeDownError;
@@ -87,7 +76,6 @@ export async function resolveAuth(): Promise<ResolvedAuth> {
     }
     throw new Error(`RxLocal auth: reading the signed-in tab failed: ${e instanceof Error ? e.message : String(e)}`);
   }
-  const raw = session.localStorage['kc_authRes'];
   if (!raw) {
     throw new Error(
       'localStorage["kc_authRes"] missing on patient.rxlocal.com. ' +

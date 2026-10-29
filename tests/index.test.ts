@@ -4,6 +4,10 @@ import { registerAgeTools } from '../src/tools/age.js';
 import { registerNotificationTools } from '../src/tools/notifications.js';
 import { registerLegalTools } from '../src/tools/legal.js';
 import { registerHealthcheckTools } from '../src/tools/healthcheck.js';
+import { registerPrescriptionTools } from '../src/tools/prescriptions.js';
+import { registerRefillTools } from '../src/tools/refills.js';
+import { registerMessageTools } from '../src/tools/messages.js';
+import { registerComposeTools } from '../src/tools/compose.js';
 import { createTestHarness, parseToolResult } from './helpers.js';
 import { stubClient } from './stub-client.js';
 
@@ -13,6 +17,11 @@ const EXPECTED = [
   'rxlocal_notifications',
   'rxlocal_legal',
   'rxlocal_healthcheck',
+  'rxlocal_list_prescriptions',
+  'rxlocal_get_refill_options',
+  'rxlocal_list_messages',
+  'rxlocal_request_refill',
+  'rxlocal_send_message',
 ];
 
 describe('tool registry', () => {
@@ -26,6 +35,10 @@ describe('tool registry', () => {
       registerAgeTools(server, client);
       registerNotificationTools(server, client);
       registerLegalTools(server, client);
+      registerPrescriptionTools(server, client);
+      registerRefillTools(server, client);
+      registerMessageTools(server, client);
+      registerComposeTools(server, client);
       registerHealthcheckTools(server, client);
     });
     registered = (await harness.listTools()).map((t) => t.name).sort();

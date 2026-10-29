@@ -8,7 +8,11 @@ import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const EXPECTED = ['rxlocal_profile', 'rxlocal_age_gate', 'rxlocal_notifications', 'rxlocal_legal', 'rxlocal_healthcheck'];
+const EXPECTED = [
+  'rxlocal_profile', 'rxlocal_age_gate', 'rxlocal_notifications', 'rxlocal_legal', 'rxlocal_healthcheck',
+  'rxlocal_list_prescriptions', 'rxlocal_get_refill_options', 'rxlocal_list_messages',
+  'rxlocal_request_refill', 'rxlocal_send_message',
+];
 
 describe('server boots from the bundle with no node_modules', () => {
   let dir: string;

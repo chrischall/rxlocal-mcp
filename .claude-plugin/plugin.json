@@ -2,7 +2,7 @@
   "name": "rxlocal",
   "displayName": "RxLocal",
   "version": "0.1.0",
-  "description": "RxLocal (PioneerRx/RedSail) pharmacy patient-portal MCP for Claude — account profile, age gate, notifications and legal documents",
+  "description": "RxLocal (PioneerRx/RedSail) pharmacy patient-portal MCP for Claude — prescriptions, refill options, pharmacy messages, and confirm-gated refill requests and messages",
   "author": {
     "name": "Chris Chall",
     "email": "chris.c.hall@gmail.com"

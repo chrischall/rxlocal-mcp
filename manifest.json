@@ -4,7 +4,7 @@
   "name": "rxlocal-mcp",
   "display_name": "RxLocal",
   "version": "0.1.0",
-  "description": "RxLocal (PioneerRx/RedSail) pharmacy patient-portal MCP — account profile, age gate, notifications and legal documents",
+  "description": "RxLocal (PioneerRx/RedSail) pharmacy patient-portal MCP — prescriptions, refill options, pharmacy messages, and confirm-gated refill requests and messages",
   "author": {
     "name": "Chris Chall",
     "email": "chris.c.hall@gmail.com",
@@ -81,6 +81,26 @@
     {
       "name": "rxlocal_legal",
       "description": "Terms of Use or Privacy Policy document"
+    },
+    {
+      "name": "rxlocal_list_prescriptions",
+      "description": "Prescriptions on file: drug, Rx number, refills remaining, days supply, expiration, prescriber, and whether a refill can be requested"
+    },
+    {
+      "name": "rxlocal_get_refill_options",
+      "description": "Pickup/delivery/mail options, pickup times and calendar, pharmacy hours, and the pharmacy's refill disclaimers"
+    },
+    {
+      "name": "rxlocal_list_messages",
+      "description": "Recent secure messages with the pharmacy (never marks them read)"
+    },
+    {
+      "name": "rxlocal_request_refill",
+      "description": "Request refills/renewals of one or more prescriptions (confirm-gated write)"
+    },
+    {
+      "name": "rxlocal_send_message",
+      "description": "Send a plain-text secure message to the pharmacy (confirm-gated write)"
     },
     {
       "name": "rxlocal_healthcheck",
