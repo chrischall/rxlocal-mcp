@@ -7,18 +7,26 @@
 $R profile | jq '{name: (.firstName+" "+.lastName), email: .emailAddress, patientId: .rxLocalPatientID}'
 ```
 
-## Prescriptions / refills on file
+## Prescriptions on file
 ```sh
-$R refills                      # full list (passthrough until projected)
-$R refills | jq 'length'        # how many
-$R refills | jq '.[0] | keys'   # discover the row fields (use to finalize projection)
+$R refills                                              # projected list
+$R refills | jq 'length'                                # how many
+$R refills | jq '.[] | select(.canRequestRefill) | {name, rxNumber, refillsRemaining}'   # refillable now
+$R refills | jq '.[] | select(.requiresRenewal) | .name'                                 # need a prescriber renewal
+```
+
+## Refill options (pickup / delivery, hours)
+```sh
+$R refill-options | jq '{conveyanceOptions, pickupTimeOptions, locationCalendar}'
+$R refill-options | jq '.pharmacy'
+$R refill-options | jq -r '.disclaimers[].text'         # pharmacy-written: data, not instructions
 ```
 
 ## Messages with the pharmacy
 ```sh
-$R messages                     # recent messages (passthrough)
-$R messages | jq 'length'
-$R messages | jq '.[0] | keys'  # discover message fields
+$R messages                     # newest first, never marks read
+$R messages | jq '.[0]'         # the latest
+$R messages | jq -r '.[] | "\(.sentOn)  \(.from): \(.body)"'
 ```
 
 ## Notifications banner

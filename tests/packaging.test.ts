@@ -57,11 +57,13 @@ describe('version consistency across manifests', () => {
 });
 
 describe('manifest.json tool roster matches the registered tools', () => {
-  it('lists exactly the five served tools with non-empty descriptions', () => {
+  it('lists exactly the served tools with non-empty descriptions', () => {
     const tools = (read('manifest.json') as { tools: { name: string; description: string }[] }).tools;
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual([
-      'rxlocal_age_gate', 'rxlocal_healthcheck', 'rxlocal_legal', 'rxlocal_notifications', 'rxlocal_profile',
+      'rxlocal_age_gate', 'rxlocal_get_refill_options', 'rxlocal_healthcheck', 'rxlocal_legal',
+      'rxlocal_list_messages', 'rxlocal_list_prescriptions', 'rxlocal_notifications', 'rxlocal_profile',
+      'rxlocal_request_refill', 'rxlocal_send_message',
     ]);
     for (const t of tools) expect(t.description.length, `${t.name} needs a description`).toBeGreaterThan(0);
   });

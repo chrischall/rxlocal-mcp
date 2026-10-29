@@ -2,9 +2,18 @@ version: 1
 name: RxLocal
 slug: rxlocal
 summary: >-
-  RxLocal (PioneerRx/RedSail) pharmacy patient-portal MCP — account profile,
-  age gate, notifications and legal documents
+  RxLocal (PioneerRx/RedSail) pharmacy patient-portal MCP — prescriptions,
+  refill options and pharmacy messages, plus confirm-gated refill requests and
+  messages
 examples:
+  - prompt: Which of my RxLocal prescriptions can I refill right now?
+    note: Reads the prescription list (refills remaining, canRequestRefill). Read-only.
+  - prompt: Any new messages from my pharmacy?
+    note: Reads recent pharmacy messages without marking them read.
+  - prompt: Request a refill of my blood-pressure prescription for pickup tomorrow.
+    note: >-
+      Validates against the live refill list and pickup options, then shows a
+      preview; nothing is sent until you confirm.
   - prompt: What's on my RxLocal pharmacy account — name, email and phone on file?
     note: Reads the account profile. Read-only.
   - prompt: Does my RxLocal account have any pending notification banner?
@@ -14,16 +23,20 @@ examples:
 #
 # Hosting note (a comment, not user-facing summary text): this is a
 # BROWSER-BRIDGE MCP. It has no env-var credential — it reads the signed-in
-# patient.rxlocal.com tab via the fetchproxy bridge (@fetchproxy/bootstrap) to
-# get the short-lived Keycloak bearer, then calls the API directly. A bridged
+# patient.rxlocal.com tab via the fetchproxy bridge to get the short-lived
+# Keycloak bearer, and relays EVERY API call through that tab. A bridged
 # registration also needs runtime `fly-shared`, `bridge: true` and
 # `bridgePortEnv: FETCHPROXY_WS_PORT`, which are registration fields this
 # manifest has no schema for (set them over the control API). `state.dataDir`
 # below is required for `bridge`.
 #
-# Scope note: RxLocal binds its patient-data endpoints (prescriptions,
-# messages) to the live SPA session; they 401 on any replayed request, so this
-# server exposes only the stateless account reads that work server-side.
+# Scope note: every API call carries the SPA's public `portalid` header (the web
+# patientPortalID); without it the patient-data endpoints (prescriptions,
+# messages) answer 401. They also need the tab's HttpOnly session cookies,
+# which is why calls go through the tab rather than from the runner (verified
+# live, read-only, 2026-10-29). The two writes (refill request, pharmacy message) are
+# derived from the SPA bundle and are UNVERIFIED on the wire; both are
+# confirm-gated.
 env:
   - name: RXLOCAL_DISABLE_FETCHPROXY
     required: false
@@ -31,6 +44,18 @@ env:
       Set to 1 to disable the browser-bridge read, making a missing session a
       hard error. There is no other credential path, so a hosted registration
       that is not bridged will have every tool fail — leave unset for bridged.
+  - name: MCP_CONFIRM_MODE
+    required: false
+    help: >-
+      Confirm-gate behaviour for every write (refill requests, pharmacy
+      messages). ask-user (default) returns a preview + confirmToken and
+      requires a second call with that token; auto lets a capable host confirm
+      in one step; an unrecognised value fails closed (refuse).
+  - name: MCP_CONFIRM_ELICITATION
+    required: false
+    help: >-
+      on (default) lets the host confirm a write interactively (elicitation);
+      off forces the confirmToken round-trip.
 state:
   dataDir: true
   reason: >-
