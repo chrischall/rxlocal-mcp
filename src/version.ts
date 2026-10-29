@@ -3,4 +3,4 @@
 // `extra-files`), and tests/version-sync.test.ts guards it against
 // package.json drift.
 export const SERVER_NAME = 'rxlocal-mcp';
-export const VERSION = '0.1.0'; // x-release-please-version
+export const VERSION = '0.2.0'; // x-release-please-version

@@ -1,6 +1,6 @@
 {
   "name": "rxlocal-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "mcpName": "io.github.chrischall/rxlocal-mcp",
   "description": "RxLocal (PioneerRx/RedSail) pharmacy patient-portal MCP server for Claude: prescriptions, refill options and pharmacy messages, plus confirm-gated refill requests and messages",
   "author": "Claude Code (AI) <https://www.anthropic.com/claude>",
