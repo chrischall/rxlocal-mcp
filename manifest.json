@@ -3,7 +3,7 @@
   "manifest_version": "0.3",
   "name": "rxlocal-mcp",
   "display_name": "RxLocal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "RxLocal (PioneerRx/RedSail) pharmacy patient-portal MCP — prescriptions, refill options, pharmacy messages, and confirm-gated refill requests and messages",
   "author": {
     "name": "Chris Chall",
