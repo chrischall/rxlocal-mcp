@@ -215,9 +215,11 @@ export function registerRefillTools(server: McpServer, client: RxLocalClient): v
           }
           if (rx.canRequestRefill !== true) {
             throw new McpToolError(`${rx.name ?? id} cannot be refilled through the portal right now.`, {
+              // The pharmacy's reason (unAvailableMessage) is pharmacy-written text, so it
+              // is not repeated here, outside an untrusted envelope.
               hint:
                 (typeof rx.unAvailableMessage === 'string' && rx.unAvailableMessage
-                  ? `The pharmacy says: "${rx.unAvailableMessage}". `
+                  ? "rxlocal_list_prescriptions shows the pharmacy's reason (unAvailableMessage). "
                   : '') + 'Contact the pharmacy (rxlocal_send_message) instead.',
             });
           }
