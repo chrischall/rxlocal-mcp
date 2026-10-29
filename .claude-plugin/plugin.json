@@ -1,13 +1,21 @@
 {
   "name": "rxlocal",
   "displayName": "RxLocal",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "RxLocal (PioneerRx/RedSail) pharmacy patient-portal MCP for Claude — account profile, age gate, notifications and legal documents",
-  "author": { "name": "Chris Chall", "email": "chris.c.hall@gmail.com" },
+  "author": {
+    "name": "Chris Chall",
+    "email": "chris.c.hall@gmail.com"
+  },
   "homepage": "https://github.com/chrischall/rxlocal-mcp",
   "repository": "https://github.com/chrischall/rxlocal-mcp",
   "license": "MIT",
-  "keywords": ["rxlocal", "pioneerrx", "pharmacy", "mcp"],
+  "keywords": [
+    "rxlocal",
+    "pioneerrx",
+    "pharmacy",
+    "mcp"
+  ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json"
 }
