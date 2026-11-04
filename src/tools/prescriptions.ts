@@ -58,8 +58,8 @@ export function runsOut(r: Refill): string | undefined {
 
 /**
  * A prescription's refill status in a few words, from the portal's own flags.
- * The pharmacy-written `unAvailableMessage` is never repeated: a brief line is
- * plain text, outside the untrusted envelope.
+ * The pharmacy-written `unAvailableMessage` is never repeated: a brief line
+ * stays a few words, not the pharmacy's sentence.
  */
 export function refillStatus(r: Refill): string {
   const requested = flat(r.refillRequestStatus);
@@ -112,7 +112,10 @@ export function registerPrescriptionTools(server: McpServer, client: RxLocalClie
         const rows = refillRows(raw)
           .map((r) => ({ r, out: runsOut(r) }))
           .sort((a, b) => (a.out ?? '9999').localeCompare(b.out ?? '9999'));
-        return briefResult(rows.map(({ r }) => briefRefill(r)));
+        return briefResult(
+          rows.map(({ r }) => briefRefill(r)),
+          'Drug names and refill request statuses come from the pharmacy\'s records.',
+        );
       }
       const v = resolveView(view, RX_VIEWS);
       if (v === 'raw') return untrustedResult(raw, { note: RX_NOTE });

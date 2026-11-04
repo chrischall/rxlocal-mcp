@@ -50,8 +50,8 @@ export function projectMessage(m: Record<string, unknown>): Record<string, unkno
 
 /**
  * One message as a brief line: who sent it — when — which way it went. The
- * body is written by pharmacy staff and a brief line is plain text, outside
- * the untrusted envelope, so the body is never in it (compact/full carry it).
+ * body is written by pharmacy staff and is never in a brief line (compact/full
+ * carry it); the sender's name is, so the lines ride in the untrusted envelope.
  * Staff messages carry the sender's `employeeID`; the account holder's own
  * carry only a `messageUserID`.
  */
@@ -97,7 +97,11 @@ export function registerMessageTools(server: McpServer, client: RxLocalClient): 
         .slice()
         .sort((a, b) => String(b.sentOn ?? '').localeCompare(String(a.sentOn ?? '')));
       const shown = rows.slice(0, limit);
-      if (view === 'brief') return briefResult(shown.map(briefMessage));
+      if (view === 'brief') {
+        const lines = shown.map(briefMessage);
+        if (shown.length > 0 && shown.length < rows.length) lines.push(`-- ${shown.length} of ${rows.length} shown`);
+        return briefResult(lines, 'Sender names are written by the pharmacy.');
+      }
       const full = resolveView(view, MESSAGE_VIEWS) === 'full';
       return untrustedResult(
         {

@@ -80,7 +80,10 @@ JSON ready for `jq`; stderr carries pair codes and status.
 When the rxlocal-mcp server is hosted on mcp-host, its tools join the
 **health** group (`_meta.mint.domain: "health"`). The group's canonical reads,
 each answered with `view: "brief"` (one line per item,
-`title — <ISO date | no date> — <status>`):
+`title — <ISO date | no date> — <status>`, ≤ 120 chars, inside the
+untrusted-data envelope's `data` because drug and sender names are
+pharmacy-written; a line starting `-- ` is a note — `-- none` when empty,
+`-- N of M shown` when `limit` cut the messages short):
 
 - **what's due** → `rxlocal_list_prescriptions` (the drug, the day the last
   fill runs out — fill date + days supply — and its refill status: can request

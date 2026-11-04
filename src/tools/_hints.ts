@@ -12,7 +12,7 @@
  */
 import { z } from 'zod';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
-import { viewParam, type View } from '@chrischall/mcp-utils';
+import { UNTRUSTED_CONTENT_RULE, untrustedResult, viewParam, type View } from '@chrischall/mcp-utils';
 
 export type MintIntent =
   | 'whats-new' | 'whats-due' | 'whats-on' | 'lookup' | 'turn-on-off' | 'send' | 'change' | 'other';
@@ -60,7 +60,8 @@ export function withMeta(server: McpServer, meta: Record<string, unknown>): McpS
 export const BRIEF_MAX = 120;
 
 const BRIEF_NOTE =
-  '"brief": one plain-text line per item, `title — <YYYY-MM-DD or "no date"> — <status>`, at most 120 chars each.';
+  '"brief": one line per item, `title — <YYYY-MM-DD or "no date"> — <status>`, at most 120 chars each, ' +
+  'as the untrusted envelope\'s `data`; a line starting "-- " is a note ("-- none", "-- N of M shown").';
 
 /**
  * The `view` parameter of a canonical read: the tool's own rungs plus
@@ -86,14 +87,33 @@ export function isoDay(value: unknown): string | undefined {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : undefined;
 }
 
-/** `title — date — status`, the title cut with an ellipsis to keep the line ≤ 120. */
-export function briefLine(title: string, date: string | undefined, status: string): string {
-  const tail = ` — ${date ?? 'no date'} — ${status}`;
-  const room = BRIEF_MAX - tail.length;
-  return `${title.length > room ? `${title.slice(0, Math.max(room - 1, 0))}…` : title}${tail}`;
+/** The shortest a title is cut to before the status gives way too. */
+const TITLE_FLOOR = 24;
+
+const cut = (s: string, n: number): string => (s.length > n ? `${s.slice(0, Math.max(n - 1, 0))}…` : s);
+
+/**
+ * `title — date — status`, cut to ≤ 120 chars as a WHOLE, title first: the
+ * title shortens until the line fits, and only once it is at its floor does
+ * the status give way too. A title starting with `-- ` (a note) or `\` is
+ * escaped with one leading `\`, which the host strips after its note check,
+ * so an item can never read as a note (the consolidated brief-view contract).
+ */
+export function briefLine(rawTitle: string, date: string | undefined, status: string): string {
+  const title = rawTitle.startsWith('-- ') || rawTitle.startsWith('\\') ? `\\${rawTitle}` : rawTitle;
+  const sep = ` — ${date ?? 'no date'} — `;
+  const room = BRIEF_MAX - sep.length;
+  if (title.length + status.length <= room) return `${title}${sep}${status}`;
+  const shownTitle = cut(title, Math.max(room - status.length, Math.min(title.length, TITLE_FLOOR)));
+  return `${shownTitle}${sep}${cut(status, room - shownTitle.length)}`;
 }
 
-/** One line per item, as plain text — never a JSON envelope. */
-export function briefResult(lines: string[]): CallToolResult {
-  return { content: [{ type: 'text', text: lines.join('\n') }] };
+/**
+ * The brief answer: the lines inside the fleet's untrusted-data envelope as
+ * `{ untrusted_content, note, data: string[] }`, minified — drug and sender
+ * names are text the pharmacy wrote. Nothing to show is the one note line
+ * `-- none`; a host composing a group answer unwraps `data`.
+ */
+export function briefResult(lines: string[], whoWrote: string): CallToolResult {
+  return untrustedResult(lines.length > 0 ? lines : ['-- none'], { note: `${whoWrote} ${UNTRUSTED_CONTENT_RULE}` });
 }
