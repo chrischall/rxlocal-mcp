@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/chrischall/rxlocal-mcp/compare/v0.3.0...v0.3.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **brief:** align the brief view with the fleet contract ([#10](https://github.com/chrischall/rxlocal-mcp/issues/10)) ([2f98d31](https://github.com/chrischall/rxlocal-mcp/commit/2f98d31ff52992360ce5afa2c2ed4c2055874881))
+
 ## [0.3.0](https://github.com/chrischall/rxlocal-mcp/compare/v0.2.0...v0.3.0) (2026-11-04)
 
 
