@@ -12,6 +12,7 @@ import { registerRefillTools } from '../src/tools/refills.js';
 import { registerMessageTools } from '../src/tools/messages.js';
 import { registerComposeTools } from '../src/tools/compose.js';
 import { registerHealthcheckTools } from '../src/tools/healthcheck.js';
+import { briefLine } from '../src/tools/_hints.js';
 
 /**
  * Context-group hints (`_meta.mint`, the mcp-host contract), read off the
@@ -153,12 +154,12 @@ describe('_meta.mint on tools/list', () => {
 /** A brief line: `title — <ISO date | no date> — <status>`, at most 120 chars. */
 const BRIEF = /^.+ — (\d{4}-\d{2}-\d{2}|no date) — .+$/;
 
-function expectBrief(text: string, count: number): string[] {
-  const lines = text.split('\n');
+/** Item lines are `BRIEF`; a `-- ` line is a note (the consolidated brief-view contract). */
+function expectBrief(lines: string[], count: number): string[] {
   expect(lines).toHaveLength(count);
   for (const line of lines) {
     expect(line.length, line).toBeLessThanOrEqual(120);
-    expect(line, line).toMatch(BRIEF);
+    if (!line.startsWith('-- ')) expect(line, line).toMatch(BRIEF);
   }
   return lines;
 }
@@ -166,6 +167,25 @@ function expectBrief(text: string, count: number): string[] {
 function textOf(res: { content?: unknown }): string {
   return (res.content as { type: string; text: string }[])[0]!.text;
 }
+
+/**
+ * The brief lines of a read, out of the fleet's untrusted-data envelope:
+ * `{ untrusted_content, note, data: string[] }`, minified, note first —
+ * drug names and sender names are text the pharmacy wrote.
+ */
+function briefData(res: { content?: unknown }, who: RegExp): string[] {
+  const text = textOf(res);
+  expect(text).not.toContain('\n');
+  const env = JSON.parse(text) as Record<string, unknown>;
+  expect(Object.keys(env)).toEqual(['untrusted_content', 'note', 'data']);
+  expect(env.untrusted_content).toBe(true);
+  expect(env.note).toMatch(who);
+  expect(Array.isArray(env.data)).toBe(true);
+  return env.data as string[];
+}
+
+const RX_WHO = /pharmacy/i;
+const MSG_WHO = /pharmacy/i;
 
 describe('view: brief on the canonical reads', () => {
   it('prescriptions answer one line each: drug — runs out — refill status, soonest first', async () => {
@@ -178,7 +198,7 @@ describe('view: brief on the canonical reads', () => {
     const h = await harness(stubClient({ getRefills: async () => refills }));
     const res = await h.callTool('rxlocal_list_prescriptions', { view: 'brief' });
     await h.close();
-    const lines = expectBrief(textOf(res), 4);
+    const lines = expectBrief(briefData(res, RX_WHO), 4);
     expect(lines[0]).toBe('Drug A 10mg Tablet — 2026-10-01 — can request a refill');
     expect(lines[1]).toMatch(/^Drug D .*… — 2026-10-27 — refill pending$/);
     expect(lines[2]).toBe('Drug B 5mg Capsule — no date — needs a prescriber renewal');
@@ -197,44 +217,66 @@ describe('view: brief on the canonical reads', () => {
       data: { refills: [{ name: 'Drug E', dateFilled: '2026-11-01', daysSupply: 30, refillsRemaining: 0, canRequestRefill: false }] },
     });
     const h = await harness(stubClient({ getRefills }));
-    const text = textOf(await h.callTool('rxlocal_list_prescriptions', { view: 'brief' }));
+    const res = await h.callTool('rxlocal_list_prescriptions', { view: 'brief' });
     await h.close();
-    expect(expectBrief(text, 1)).toEqual(['Drug E — 2026-12-01 — no refills left']);
+    expect(expectBrief(briefData(res, RX_WHO), 1)).toEqual(['Drug E — 2026-12-01 — no refills left']);
+  });
+
+  it('a drug name that reads like a note, or starts with a backslash, is escaped with one backslash', async () => {
+    const getRefills = async () => ({
+      data: {
+        refills: [
+          { name: '-- none', dateFilled: '2026-11-01', daysSupply: 30, canRequestRefill: true },
+          { name: '\\x Drug', dateFilled: '2026-11-02', daysSupply: 30, canRequestRefill: true },
+          { name: '--not a note', dateFilled: '2026-11-03', daysSupply: 30, canRequestRefill: true },
+        ],
+      },
+    });
+    const h = await harness(stubClient({ getRefills }));
+    const res = await h.callTool('rxlocal_list_prescriptions', { view: 'brief' });
+    await h.close();
+    expect(expectBrief(briefData(res, RX_WHO), 3)).toEqual([
+      '\\-- none — 2026-12-01 — can request a refill',
+      '\\\\x Drug — 2026-12-02 — can request a refill',
+      '--not a note — 2026-12-03 — can request a refill',
+    ]);
   });
 
   it('messages answer one line each, newest first, naming the sender but never the body', async () => {
     const h = await harness();
     const res = await h.callTool('rxlocal_list_messages', { view: 'brief' });
     await h.close();
-    const text = textOf(res);
-    expect(expectBrief(text, 2)).toEqual([
+    expect(expectBrief(briefData(res, MSG_WHO), 2)).toEqual([
       'Message from Jane Doe — 2026-10-05 — sent by you',
       'Message from Test Pharmacy Staff — 2026-10-01 — from the pharmacy',
     ]);
     // Bodies are pharmacy-written: they stay in compact/full, inside the untrusted envelope.
-    expect(text).not.toContain('Your order is ready.');
+    expect(textOf(res)).not.toContain('Your order is ready.');
   });
 
-  it('a message brief honours limit and flattens a multi-line sender name', async () => {
+  it('a message brief honours limit, says how many were shown, and flattens a multi-line sender name', async () => {
     const messages = structuredClone(MESSAGES);
     messages.data.messagesToAddUpdate[0]!.sender = { employeeID: 'E-1', displayName: 'Test\nPharmacy' } as never;
     messages.data.messagesToAddUpdate.push({ messageID: 'M-3', body: 'x', sender: {} } as never);
     const h = await harness(stubClient({ syncMessages: async () => messages }));
-    const all = textOf(await h.callTool('rxlocal_list_messages', { view: 'brief' }));
-    const one = textOf(await h.callTool('rxlocal_list_messages', { view: 'brief', limit: 1 }));
+    const all = briefData(await h.callTool('rxlocal_list_messages', { view: 'brief' }), MSG_WHO);
+    const one = briefData(await h.callTool('rxlocal_list_messages', { view: 'brief', limit: 1 }), MSG_WHO);
+    const three = briefData(await h.callTool('rxlocal_list_messages', { view: 'brief', limit: 3 }), MSG_WHO);
     await h.close();
     expect(expectBrief(all, 3)).toEqual([
       'Message from Jane Doe — 2026-10-05 — sent by you',
       'Message from Test Pharmacy — 2026-10-01 — from the pharmacy',
       'Message — no date — sender unknown',
     ]);
-    expect(expectBrief(one, 1)).toEqual(['Message from Jane Doe — 2026-10-05 — sent by you']);
+    expect(expectBrief(one, 2)).toEqual(['Message from Jane Doe — 2026-10-05 — sent by you', '-- 1 of 3 shown']);
+    expect(three).toHaveLength(3);
+    expect(three.some((l) => l.startsWith('-- '))).toBe(false);
   });
 
-  it('an empty brief is empty text, not a JSON envelope', async () => {
+  it('an empty brief is the single note line `-- none`, inside the envelope', async () => {
     const h = await harness(stubClient({ getRefills: async () => ({}), syncMessages: async () => ({}) }));
-    expect(textOf(await h.callTool('rxlocal_list_prescriptions', { view: 'brief' }))).toBe('');
-    expect(textOf(await h.callTool('rxlocal_list_messages', { view: 'brief' }))).toBe('');
+    expect(briefData(await h.callTool('rxlocal_list_prescriptions', { view: 'brief' }), RX_WHO)).toEqual(['-- none']);
+    expect(briefData(await h.callTool('rxlocal_list_messages', { view: 'brief' }), MSG_WHO)).toEqual(['-- none']);
     await h.close();
   });
 
@@ -244,5 +286,19 @@ describe('view: brief on the canonical reads', () => {
     const text = textOf(await h.callTool('rxlocal_list_prescriptions', {}));
     await h.close();
     expect(JSON.parse(text)).toMatchObject({ untrusted_content: true, count: 3 });
+  });
+});
+
+describe('briefLine', () => {
+  it('cuts the line as a WHOLE to 120 chars, title first, never only the title', () => {
+    const line = briefLine('T'.repeat(200), '2026-11-04', 'S'.repeat(200));
+    expect(line.length).toBeLessThanOrEqual(120);
+    expect(line).toMatch(/^T+… — 2026-11-04 — S+…$/);
+  });
+
+  it('shortens only the title while the status fits', () => {
+    const line = briefLine('T'.repeat(200), undefined, 'can request a refill');
+    expect(line.length).toBe(120);
+    expect(line.endsWith(' — no date — can request a refill')).toBe(true);
   });
 });
