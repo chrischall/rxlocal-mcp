@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/chrischall/rxlocal-mcp/compare/v0.2.0...v0.3.0) (2026-11-04)
+
+
+### Features
+
+* context-group hints, a brief view on prescriptions and pharmacy messages ([#8](https://github.com/chrischall/rxlocal-mcp/issues/8)) ([98af5f2](https://github.com/chrischall/rxlocal-mcp/commit/98af5f220c2b4594600799ac6d93c3e149620ca8))
+
 ## [0.2.0](https://github.com/chrischall/rxlocal-mcp/compare/v0.1.0...v0.2.0) (2026-10-29)
 
 
