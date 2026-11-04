@@ -1,0 +1,99 @@
+/**
+ * Context-group hints, published on each tool as `_meta.mint` (mcp-host's
+ * `mintHintSchema`, spec 2026-11-03 D4), and the `view: "brief"` rung the
+ * canonical reads answer a group's question in. Inert data to any other
+ * client: a host that does not read them sees an extra `_meta` key.
+ *
+ * The shape is fixed by the host's contract, so it is restated here rather
+ * than imported — this server takes no dependency on mcp-host. `aliases` are
+ * the words a person says, lowercase, at most 8, each at most 40 chars. No
+ * tool here names a `subject` (one signed-in account holder, no listable set
+ * of people to fan out over) or a `when` (neither canonical read takes a range).
+ */
+import { z } from 'zod';
+import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
+import { viewParam, type View } from '@chrischall/mcp-utils';
+
+export type MintIntent =
+  | 'whats-new' | 'whats-due' | 'whats-on' | 'lookup' | 'turn-on-off' | 'send' | 'change' | 'other';
+
+export interface MintHint {
+  domain: 'health';
+  intent: MintIntent;
+  canonical?: true;
+  subject?: string;
+  when?: { start: string; end: string };
+  aliases?: string[];
+}
+
+/** `_meta` for an RxLocal tool: every tool here is in the `health` group. */
+export function healthMeta(
+  intent: MintIntent,
+  extra: Omit<MintHint, 'domain' | 'intent'> = {},
+): { mint: MintHint } {
+  return { mint: { domain: 'health', intent, ...extra } };
+}
+
+/**
+ * `server`, with `_meta` added to every tool registered through it. For the
+ * confirm-gated writes: `registerWrite` builds the `registerTool` config
+ * itself and takes no `_meta`, so the hint is attached on the way through.
+ */
+export function withMeta(server: McpServer, meta: Record<string, unknown>): McpServer {
+  return new Proxy(server, {
+    get(target, prop, receiver) {
+      if (prop === 'registerTool') {
+        return (name: string, config: Record<string, unknown>, cb: unknown) =>
+          (target.registerTool as (...a: unknown[]) => unknown).call(
+            target,
+            name,
+            { ...config, _meta: { ...(config._meta as Record<string, unknown> | undefined), ...meta } },
+            cb,
+          );
+      }
+      return Reflect.get(target, prop, receiver) as unknown;
+    },
+  });
+}
+
+/** The longest a brief line may be. */
+export const BRIEF_MAX = 120;
+
+const BRIEF_NOTE =
+  '"brief": one plain-text line per item, `title — <YYYY-MM-DD or "no date"> — <status>`, at most 120 chars each.';
+
+/**
+ * The `view` parameter of a canonical read: the tool's own rungs plus
+ * `brief`. Absent still means compact.
+ */
+export function briefViewParam(rungs: readonly View[], note: string) {
+  const base = viewParam(rungs);
+  return z
+    .enum([...rungs, 'brief'] as readonly string[] as [string, ...string[]])
+    .optional()
+    .describe(`${base.description ?? ''} ${BRIEF_NOTE} ${note}`.trim());
+}
+
+/** Whitespace collapsed, so one item stays one line; `undefined` when empty. */
+export function flat(s: unknown): string | undefined {
+  if (typeof s !== 'string') return undefined;
+  const out = s.replace(/\s+/g, ' ').trim();
+  return out ? out : undefined;
+}
+
+/** `YYYY-MM-DD` of an ISO-ish date string, or `undefined`. */
+export function isoDay(value: unknown): string | undefined {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : undefined;
+}
+
+/** `title — date — status`, the title cut with an ellipsis to keep the line ≤ 120. */
+export function briefLine(title: string, date: string | undefined, status: string): string {
+  const tail = ` — ${date ?? 'no date'} — ${status}`;
+  const room = BRIEF_MAX - tail.length;
+  return `${title.length > room ? `${title.slice(0, Math.max(room - 1, 0))}…` : title}${tail}`;
+}
+
+/** One line per item, as plain text — never a JSON envelope. */
+export function briefResult(lines: string[]): CallToolResult {
+  return { content: [{ type: 'text', text: lines.join('\n') }] };
+}

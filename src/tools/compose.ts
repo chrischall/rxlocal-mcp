@@ -11,6 +11,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { McpToolError, NonEmptyString, defineWrite, registerWrite } from '@chrischall/mcp-utils';
 import type { RxLocalClient } from '../client.js';
 import { WRITE, compactResult, sendOnce, writeDescription } from './_writes.js';
+import { healthMeta, withMeta } from './_hints.js';
 
 /** The `CreatePatientMessage` body, as the SPA builds it (no attachment). */
 export function buildMessagePayload(input: {
@@ -29,7 +30,7 @@ export function buildMessagePayload(input: {
 
 export function registerComposeTools(server: McpServer, client: RxLocalClient): void {
   registerWrite(
-    server,
+    withMeta(server, healthMeta('send', { aliases: ['message the pharmacy', 'ask the pharmacist'] })),
     defineWrite({
       name: 'rxlocal_send_message',
       description: writeDescription(

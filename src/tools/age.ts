@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { minifiedResult } from '@chrischall/mcp-utils';
+import { healthMeta } from './_hints.js';
 import type { RxLocalClient } from '../client.js';
 
 export function registerAgeTools(server: McpServer, client: RxLocalClient): void {
@@ -10,6 +11,7 @@ export function registerAgeTools(server: McpServer, client: RxLocalClient): void
       description:
         "Get the RxLocal account-holder age gate: whether the account holder is under the portal's minimum age, and what that minimum is. Returns { underMinimumAge, minimumAge }.",
       annotations: { readOnlyHint: true, openWorldHint: true },
+      _meta: healthMeta('lookup'),
       inputSchema: z.object({}),
     },
     async () => minifiedResult(await client.getAge()),

@@ -12,10 +12,10 @@ import {
   UNTRUSTED_DESCRIPTION_SUFFIX,
   resolveView,
   untrustedResult,
-  viewParam,
 } from '@chrischall/mcp-utils';
 import type { Refill, RxLocalClient } from '../client.js';
 import { READ, asRecordArray, tidy } from './_shared.js';
+import { briefLine, briefResult, briefViewParam, flat, healthMeta, isoDay } from './_hints.js';
 
 const RX_VIEWS = ['compact', 'full', 'raw'] as const;
 const RX_NOTE = `The pharmacy writes unAvailableMessage (why a refill cannot be requested). ${UNTRUSTED_CONTENT_RULE}`;
@@ -42,6 +42,38 @@ export function projectRefill(r: Refill): Record<string, unknown> {
   });
 }
 
+/**
+ * The day a fill runs out: `dateFilled` + `daysSupply`, as `YYYY-MM-DD`, or
+ * `undefined` when either is missing. This is the date a "what's due at the
+ * pharmacy?" question is about.
+ */
+export function runsOut(r: Refill): string | undefined {
+  const filled = isoDay(r.dateFilled);
+  const days = typeof r.daysSupply === 'number' && Number.isFinite(r.daysSupply) ? r.daysSupply : undefined;
+  if (filled === undefined || days === undefined) return undefined;
+  const d = new Date(`${filled}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * A prescription's refill status in a few words, from the portal's own flags.
+ * The pharmacy-written `unAvailableMessage` is never repeated: a brief line is
+ * plain text, outside the untrusted envelope.
+ */
+export function refillStatus(r: Refill): string {
+  const requested = flat(r.refillRequestStatus);
+  if (requested !== undefined) return `refill ${requested.toLowerCase().slice(0, 30)}`;
+  if (r.canRequestRefill === true) return r.requiresRenewal ? 'needs a prescriber renewal' : 'can request a refill';
+  if (r.refillsRemaining === 0) return 'no refills left';
+  return 'cannot refill now';
+}
+
+/** One prescription as a brief line: drug — runs out — refill status. */
+export function briefRefill(r: Refill): string {
+  return briefLine(flat(r.name) ?? flat(r.dispensedAs) ?? '(unnamed prescription)', runsOut(r), refillStatus(r));
+}
+
 /** The prescription rows of a refill-list response (empty when absent). */
 export function refillRows(raw: unknown): Refill[] {
   const data = (raw as { data?: { refills?: unknown } } | undefined)?.data;
@@ -58,14 +90,30 @@ export function registerPrescriptionTools(server: McpServer, client: RxLocalClie
         'and whether a refill can be requested now (canRequestRefill) or needs a prescriber renewal ' +
         '(requiresRenewal). The rxID is what rxlocal_request_refill takes. Compact by default; ' +
         "view:'full' returns every field per prescription (NDC, imprint, ids), view:'raw' the whole " +
-        'portal response. Changes nothing. ' +
+        'portal response, view:\'brief\' one line per prescription (drug, run-out day, refill status). ' +
+        'Changes nothing. ' +
         UNTRUSTED_DESCRIPTION_SUFFIX,
       annotations: READ,
-      inputSchema: z.object({ view: viewParam(RX_VIEWS) }),
+      _meta: healthMeta('whats-due', {
+        canonical: true,
+        aliases: ['prescriptions', 'refills', 'meds', 'medications', 'pharmacy', 'pills', 'running out'],
+      }),
+      inputSchema: z.object({
+        view: briefViewParam(
+          RX_VIEWS,
+          'A brief line is the drug, the day the last fill runs out (fill date + days supply), and its refill status; soonest first.',
+        ),
+      }),
     },
     async ({ view }) => {
       const ctx = await client.accountContext();
       const raw = await client.getRefills(ctx.groupOwnerID, ctx.userId);
+      if (view === 'brief') {
+        const rows = refillRows(raw)
+          .map((r) => ({ r, out: runsOut(r) }))
+          .sort((a, b) => (a.out ?? '9999').localeCompare(b.out ?? '9999'));
+        return briefResult(rows.map(({ r }) => briefRefill(r)));
+      }
       const v = resolveView(view, RX_VIEWS);
       if (v === 'raw') return untrustedResult(raw, { note: RX_NOTE });
       const rows = refillRows(raw);
