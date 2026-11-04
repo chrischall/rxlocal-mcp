@@ -11,10 +11,10 @@ import {
   UNTRUSTED_DESCRIPTION_SUFFIX,
   resolveView,
   untrustedResult,
-  viewParam,
 } from '@chrischall/mcp-utils';
 import type { RxLocalClient } from '../client.js';
 import { READ, asRecord, asRecordArray, tidy } from './_shared.js';
+import { briefLine, briefResult, briefViewParam, flat, healthMeta, isoDay } from './_hints.js';
 
 const MESSAGE_VIEWS = ['compact', 'full'] as const;
 
@@ -48,6 +48,25 @@ export function projectMessage(m: Record<string, unknown>): Record<string, unkno
   });
 }
 
+/**
+ * One message as a brief line: who sent it — when — which way it went. The
+ * body is written by pharmacy staff and a brief line is plain text, outside
+ * the untrusted envelope, so the body is never in it (compact/full carry it).
+ * Staff messages carry the sender's `employeeID`; the account holder's own
+ * carry only a `messageUserID`.
+ */
+export function briefMessage(m: Record<string, unknown>): string {
+  const sender = asRecord(m.sender);
+  const name = flat(sender.displayName);
+  const status =
+    sender.employeeID !== undefined && sender.employeeID !== null
+      ? 'from the pharmacy'
+      : sender.messageUserID !== undefined && sender.messageUserID !== null
+        ? 'sent by you'
+        : 'sender unknown';
+  return briefLine(name ? `Message from ${name}` : 'Message', isoDay(m.sentOn), status);
+}
+
 export function registerMessageTools(server: McpServer, client: RxLocalClient): void {
   server.registerTool(
     'rxlocal_list_messages',
@@ -55,12 +74,20 @@ export function registerMessageTools(server: McpServer, client: RxLocalClient): 
       description:
         'List recent secure messages between you and your RxLocal pharmacy, newest first: who sent ' +
         "it, when, and the text. Reading does NOT mark anything read. Compact by default; view:'full' " +
-        'returns every field per message (recipient email/phone/carrier are always removed). ' +
+        'returns every field per message (recipient email/phone/carrier are always removed); ' +
+        "view:'brief' one line per message (sender, day, direction; no body). " +
         `Changes nothing. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: READ,
+      _meta: healthMeta('whats-new', {
+        canonical: true,
+        aliases: ['pharmacy messages', 'messages', 'pharmacist', 'pharmacy', 'order ready'],
+      }),
       inputSchema: z.object({
         limit: z.number().int().min(1).max(200).default(25).describe('Most messages to return (default 25).'),
-        view: viewParam(MESSAGE_VIEWS),
+        view: briefViewParam(
+          MESSAGE_VIEWS,
+          'A brief line is the sender, the day, and whether it came from the pharmacy or from you; never the body.',
+        ),
       }),
     },
     async ({ limit, view }) => {
@@ -70,6 +97,7 @@ export function registerMessageTools(server: McpServer, client: RxLocalClient): 
         .slice()
         .sort((a, b) => String(b.sentOn ?? '').localeCompare(String(a.sentOn ?? '')));
       const shown = rows.slice(0, limit);
+      if (view === 'brief') return briefResult(shown.map(briefMessage));
       const full = resolveView(view, MESSAGE_VIEWS) === 'full';
       return untrustedResult(
         {

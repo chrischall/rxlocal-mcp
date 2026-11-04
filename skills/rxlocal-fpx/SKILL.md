@@ -75,6 +75,28 @@ JSON ready for `jq`; stderr carries pair codes and status.
 `0` ok · `2` bridge down (open/reload the signed-in tab) · `3` bot wall ·
 `4` upstream HTTP error (often a 401 — the 5-minute token aged; reload the tab).
 
+## In context groups
+
+When the rxlocal-mcp server is hosted on mcp-host, its tools join the
+**health** group (`_meta.mint.domain: "health"`). The group's canonical reads,
+each answered with `view: "brief"` (one line per item,
+`title — <ISO date | no date> — <status>`):
+
+- **what's due** → `rxlocal_list_prescriptions` (the drug, the day the last
+  fill runs out — fill date + days supply — and its refill status: can request
+  a refill, needs a prescriber renewal, no refills left, …; soonest first).
+- **what's new** → `rxlocal_list_messages` (pharmacy messages, newest first:
+  the sender, the day, and whether it came from the pharmacy or from you; the
+  pharmacy-written body is never in a brief line).
+
+Nothing here answers **what's on**, and neither read takes a subject or a
+range: one signed-in account holder, nothing to fan out over. A compound ask —
+"anything due at the pharmacy, and any new messages from my doctors?" — is one
+`whats-due` call plus one `whats-new` call, merged with the other health-group
+sources. The server reads the portal through the signed-in tab over the
+ContextMint Bridge; with no signed-in patient.rxlocal.com tab open, the group
+answers that RxLocal needs your browser open rather than reading nothing.
+
 ## Rules
 
 - **Read-only.** No write verbs are wired, and `raw POST` is limited to the read

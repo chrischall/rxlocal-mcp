@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { minifiedResult } from '@chrischall/mcp-utils';
+import { healthMeta } from './_hints.js';
 import type { RxLocalClient } from '../client.js';
 
 export function registerNotificationTools(server: McpServer, client: RxLocalClient): void {
@@ -10,6 +11,7 @@ export function registerNotificationTools(server: McpServer, client: RxLocalClie
       description:
         "Get the RxLocal most-relevant notification banner for the signed-in account. Returns { messageType } — the portal's current banner state (e.g. a pending action or none). The account's RxLocal patient id is resolved automatically.",
       annotations: { readOnlyHint: true, openWorldHint: true },
+      _meta: healthMeta('lookup', { aliases: ['pharmacy alerts'] }),
       inputSchema: z.object({}),
     },
     async () => {

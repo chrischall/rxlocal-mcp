@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { minifiedResult, pruneUndefined, resolveView, viewParam } from '@chrischall/mcp-utils';
+import { healthMeta } from './_hints.js';
 import type { RxLocalClient, LegalKind } from '../client.js';
 
 const LEGAL_VIEWS = ['compact', 'full'] as const;
@@ -12,6 +13,7 @@ export function registerLegalTools(server: McpServer, client: RxLocalClient): vo
       description:
         "Get an RxLocal legal document: the Terms of Use or the Privacy Policy. The compact default returns id, whether acceptance is required, dates and the content length; pass view:'full' for the full document HTML (large).",
       annotations: { readOnlyHint: true, openWorldHint: true },
+      _meta: healthMeta('lookup'),
       inputSchema: z.object({
         document: z.enum(['termsofuse', 'privacypolicy']).describe('Which legal document to fetch'),
         view: viewParam(LEGAL_VIEWS),

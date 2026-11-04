@@ -35,6 +35,7 @@ import {
   type PickupTimeName,
 } from './_shared.js';
 import { refillRows } from './prescriptions.js';
+import { healthMeta, isoDay, withMeta } from './_hints.js';
 import { WRITE, compactResult, sendOnce, writeDescription } from './_writes.js';
 
 const OPTION_VIEWS = ['compact', 'full', 'raw'] as const;
@@ -79,11 +80,6 @@ export function projectOptions(data: OptionsData): Record<string, unknown> {
     isDeliveryAvailable: data.isDeliveryAvailable,
     disclaimers: projectDisclaimers(data),
   });
-}
-
-/** `YYYY-MM-DD` of an ISO-ish date string, or `undefined`. */
-function day(value: unknown): string | undefined {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : undefined;
 }
 
 /** One entry of the `Requests` array the SPA posts (one per patient + location). */
@@ -146,6 +142,7 @@ export function registerRefillTools(server: McpServer, client: RxLocalClient): v
         "location. Compact by default (your own addresses and phone left out); view:'full' adds them, " +
         `view:'raw' is the whole portal response. Changes nothing. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: READ,
+      _meta: healthMeta('lookup', { aliases: ['pharmacy hours', 'pickup', 'delivery', 'when can i pick up'] }),
       inputSchema: z.object({
         data_exchange_identifier: NonEmptyString.max(64)
           .optional()
@@ -171,7 +168,7 @@ export function registerRefillTools(server: McpServer, client: RxLocalClient): v
   );
 
   registerWrite(
-    server,
+    withMeta(server, healthMeta('send', { aliases: ['refill', 'order a refill', 'renew my prescription'] })),
     defineWrite({
       name: 'rxlocal_request_refill',
       description: writeDescription(
@@ -283,9 +280,9 @@ export function registerRefillTools(server: McpServer, client: RxLocalClient): v
             });
           }
           const cal = data.locationCalendar ?? {};
-          const min = day(cal.minDate);
-          const max = day(cal.maxDate);
-          const closed = Array.isArray(cal.closed) ? cal.closed.map(day) : [];
+          const min = isoDay(cal.minDate);
+          const max = isoDay(cal.maxDate);
+          const closed = Array.isArray(cal.closed) ? cal.closed.map(isoDay) : [];
           if ((min !== undefined && args.pickup_date < min) || (max !== undefined && args.pickup_date > max)) {
             throw new McpToolError(`${args.pickup_date} is outside the pharmacy's pickup calendar.`, {
               hint: `Choose a date from ${min ?? '?'} to ${max ?? '?'}.`,
