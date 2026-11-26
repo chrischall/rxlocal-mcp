@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2](https://github.com/chrischall/rxlocal-mcp/compare/v0.3.1...v0.3.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **deps:** bump the production-dependencies group with 2 updates ([#16](https://github.com/chrischall/rxlocal-mcp/issues/16)) ([726917d](https://github.com/chrischall/rxlocal-mcp/commit/726917dab53bcd72595753c2e53410cb7928762a))
+* **deps:** bump the production-dependencies group with 3 updates ([#14](https://github.com/chrischall/rxlocal-mcp/issues/14)) ([d6eaccc](https://github.com/chrischall/rxlocal-mcp/commit/d6eaccc201a670bfa1ee4f84a5120b1d9ce0b307))
+
 ## [0.3.1](https://github.com/chrischall/rxlocal-mcp/compare/v0.3.0...v0.3.1) (2026-11-04)
 
 
